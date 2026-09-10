@@ -1,0 +1,212 @@
+//
+// Created by Merutilm on 2025-05-18.
+//
+
+#pragma once
+#include "../mrthy/MPATable.h"
+#include "../parallel/ParallelRenderState.h"
+#include "../settings/FrtGeneralSettings.hpp"
+#include "../settings/FrtPerturbSettings.hpp"
+#include "../settings/FrtSASettings.hpp"
+#include "Perturbator.h"
+#include "SeriesApproximationData.hpp"
+
+namespace merutilm::rff2 {
+
+
+    struct MB2PerturbatorBase {
+
+        ParallelRenderState &state;
+        dex dcMax;
+        complex<dex> off = complex<dex>::ZERO;
+
+    protected:
+        const FrtGeneralSettings &generalSettings;
+        const FrtSASettings &saSettings;
+        const FrtPerturbSettings &ptbSettings;
+        const SeriesApproximationData &seriesApproximationData;
+
+    public:
+        MB2PerturbatorBase(ParallelRenderState &state, const dex dcMax, const FrtGeneralSettings &generalSettings,
+                           const FrtSASettings &saSettings, const FrtPerturbSettings &ptbSettings,
+                           const SeriesApproximationData &seriesApproximationData) :
+            state(state), dcMax(dcMax), generalSettings(generalSettings), saSettings(saSettings),
+            ptbSettings(ptbSettings), seriesApproximationData(seriesApproximationData) {}
+
+        virtual ~MB2PerturbatorBase() = default;
+
+        [[nodiscard]] virtual double iterate(const complex<dex> &dc) const = 0;
+    };
+
+    template<Number Num>
+    struct MB2Perturbator final : public Perturbator, public MB2PerturbatorBase {
+
+        const MB2Reference<Num> &reference;
+        const MPATable<Num> *table;
+
+        explicit MB2Perturbator(ParallelRenderState &state, const dex dcMax, const FrtGeneralSettings &generalSettings,
+                                const FrtSASettings &saSettings, const FrtPerturbSettings &ptbSettings,
+                                const SeriesApproximationData &seriesApproximationData,
+                                const MB2Reference<Num> &reference, const MPATable<Num> *table) :
+            MB2PerturbatorBase(state, dcMax, generalSettings, saSettings, ptbSettings, seriesApproximationData),
+            reference(reference), table(table) {}
+
+        ~MB2Perturbator() override = default;
+
+
+        [[nodiscard]] bool checkInteriorBasic(const complex<Num> c) const {
+            if (rff_math::is_zero(c.im) && c.re < Num(0.25) && c.re >= Num(-2))
+                return true;
+
+            const auto cr = static_cast<double>(c.re);
+            const auto ci = static_cast<double>(c.im);
+
+            // fast calculation of main bulb
+            if (const auto crm025 = cr - 0.25;
+                crm025 * crm025 + ci * ci < 0.5 * (-crm025 + std::sqrt(crm025 * crm025 + ci * ci)))
+                return true;
+
+            if (const auto crp100 = cr + 1; crp100 * crp100 + ci * ci < 0.0625)
+                return true;
+
+
+            return false;
+        }
+
+
+
+        [[nodiscard]] double iterate(const complex<dex> &dc) const override {
+            if (state.interruptRequested())
+                return 0.0;
+
+            const auto dc0 = static_cast<complex<Num>>(dc + off);
+
+            uint64_t iteration;
+            uint64_t refIteration;
+            complex<Num> dz;
+
+
+            if (saSettings.use) {
+                const complex dcSa = {dex{dc0.re}, dex{dc0.im}};
+                complex dcSaM = dcSa;
+                complex dzSa = complex<dex>::ZERO;
+
+                for (const auto term: seriesApproximationData.terms) {
+                    dzSa = (dzSa + term * dcSaM).try_normalized_value();
+                    dcSaM = (dcSaM * dcSa).try_normalized_value();
+                }
+
+                iteration = seriesApproximationData.skippedIterations;
+                refIteration = seriesApproximationData.skippedIterations;
+                dz = {Num(dzSa.re), Num(dzSa.im)};
+
+            } else {
+                iteration = 0;
+                refIteration = 0;
+                dz = complex<Num>::ZERO;
+            }
+
+            Num dcMax0 = Num(dcMax);
+
+            const uint64_t maxRefIteration = reference.longestPeriod();
+
+            int absIteration = 0;
+            float currDistance2 = 0;
+            float prevDistance2 = currDistance2;
+
+            const float interiorDetectRadius =
+                    ptbSettings.interiorDetectRadiusPower == 0 ? 0 : pow(10, -ptbSettings.interiorDetectRadiusPower);
+            const bool isAbs = ptbSettings.absoluteIterationMode;
+            const uint64_t maxIteration = ptbSettings.maxIteration;
+            const float bailout2 = generalSettings.bailout * generalSettings.bailout;
+
+            complex<Num> c = reference.orbit(1) + dc0;
+
+            if (checkInteriorBasic(c)) {
+                return isAbs ? 1 : static_cast<double>(maxIteration);
+            }
+
+
+            std::array<complex<Num>, 8> pdz = {};
+            int pdzIndex = 0;
+
+            while (iteration < maxIteration) {
+                if (table != nullptr) {
+                    if (const PA<Num> *paPtr = table->lookup(refIteration, dz); paPtr != nullptr) {
+                        const PA<Num> &pa = *paPtr;
+
+                        dz = pa.apply(dz, dc0);
+                        iteration += pa.skip;
+                        refIteration += pa.skip;
+                        ++absIteration;
+
+                        if (iteration >= maxIteration) {
+                            break;
+                        }
+                    }
+                }
+
+
+                if (refIteration != maxRefIteration) {
+                    const complex<Num> oldZ2 = reference.orbit(refIteration) * 2;
+                    const complex<Num> oldPtbz = oldZ2 + dz;
+
+                    dz = oldPtbz * dz + dc0;
+
+                    ++refIteration;
+                    ++iteration;
+                    ++absIteration;
+                }
+
+                complex<Num> z = reference.orbit(refIteration) + dz;
+
+
+                prevDistance2 = currDistance2;
+                currDistance2 = static_cast<complex<float>>(z).norm_sqr();
+
+
+                if (refIteration == maxRefIteration || z.norm_approx() < dz.norm_approx()) {
+                    refIteration = 0;
+                    dz = z;
+
+
+                    if (interiorDetectRadius != 0) {
+                        for (const complex<Num> &pdz0: pdz) {
+                            if ((pdz0 - dz).norm_sqr() < dcMax0 * interiorDetectRadius) {
+                                return isAbs ? absIteration : maxIteration;
+                            }
+                        }
+
+                        pdz[pdzIndex++] = dz;
+                        if (pdzIndex == pdz.size())
+                            pdzIndex = 0;
+                    }
+                }
+
+
+                dz = dz.try_normalized_value();
+
+                if (currDistance2 > bailout2)
+                    break;
+                if (absIteration % Constants::Fractal::PARALLEL_OPERATION_INTERRUPT_CHECK_INTERVAL == 0 &&
+                    state.interruptRequested())
+                    return 0.0;
+            }
+
+            if (isAbs) {
+                return absIteration;
+            }
+
+            if (iteration >= maxIteration) {
+                return static_cast<double>(maxIteration);
+            }
+
+            const float prevDistance = std::sqrt(prevDistance2);
+            const float currDistance = std::sqrt(currDistance2);
+
+            return static_cast<double>(iteration) +
+                   FrtDecimalizeIterationMethodUtil::getExteriorDoubleValueIterationRatio(
+                           prevDistance, currDistance, ptbSettings.decimalizeIterationMethod, generalSettings.bailout);
+        }
+    };
+} // namespace merutilm::rff2

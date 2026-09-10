@@ -1,0 +1,15 @@
+//
+// Created by Merutilm on 2025-05-14.
+//
+
+#pragma once
+#include "RFF2.hpp"
+
+namespace merutilm::rff2 {
+    class RFF2;
+    struct FnRender {
+        static void setResolutionProperties(RFF2 &app);
+        static void setRenderProperties(RFF2 &app);
+        static void setComputeShader(RFF2 &app);
+    };
+}

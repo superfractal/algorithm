@@ -1,0 +1,176 @@
+#version 450
+#include <common.glsl>
+#include <mpa.glsl>
+
+// define descriptors
+#define DESC_ITERATION 0
+#define DESC_ITERATION_BUFFER_ACCESS writeonly
+#define DESC_RENDER_META 1
+#define DESC_BATCH_RESULT 2
+
+// include descriptors
+#include <desc_iteration.glsl>
+#include <desc_render_meta_fex.glsl>
+#include <desc_batch_result.glsl>
+
+// include utilities
+#include <utils_perturbation.glsl>
+#include <utils_complex.glsl>
+#include <utils_fex.glsl>
+
+layout (constant_id = 0) const uint ignore_mpa = 0;
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+
+FexPA invalid_sentinel() {
+    return FexPA(0, fex_complex(vec2(0)), fex_complex(vec2(0)), fex(0));
+}
+
+bool is_valid(FexPA pa, Fex r) {
+    return fex_lt(r, pa.radius);
+}
+
+
+FexPA lookup(uint64_t ref_iteration, FexComplex dz) {
+    if (ref_iteration == 0) {
+        return invalid_sentinel();
+    }
+
+    MPIndexMapper mapper = mp_mapper_meta.mapper[uint(ref_iteration)];
+
+    if (mapper.mapped == UINT64_MAX) {
+        return invalid_sentinel();
+    }
+
+    Fex r = norm_approx(dz);
+
+    switch (mp_table_meta.selection_method) {
+        case MSM_LOWEST:
+            {
+                FexPA pa = invalid_sentinel();
+
+                for (int i = 0; i < mapper.levels; ++i) {
+                    FexPA test = mp_table_meta.table[int(mapper.mapped) + i];
+                    if (is_valid(test, r)) {
+                        pa = test;
+                    } else
+                    return pa;
+                }
+                return pa;
+                break;
+            }
+        case MSM_HIGHEST:
+            {
+                FexPA pa = mp_table_meta.table[int(mapper.mapped)];
+
+                if (!is_valid(pa, r)) {
+                    return invalid_sentinel();
+                }
+
+                for (int j = int(mapper.levels); j > 1; --j) {
+                    FexPA test = mp_table_meta.table[int(mapper.mapped) + j - 1];
+
+                    if (is_valid(test, r)) {
+                        return test;
+                    }
+                }
+
+                return pa;
+                break;
+            }
+    }
+    return invalid_sentinel();
+}
+
+FexComplex apply(FexPA pa, FexComplex dz, FexComplex dc) {
+    return fex_complex_add(fex_complex_mul(pa.an, dz), fex_complex_mul(pa.bn, dc));
+}
+
+void main() {
+
+
+    uint px = gl_GlobalInvocationID.x;
+    uint py = gl_GlobalInvocationID.y;
+    uvec2 pixel = uvec2(px, py);
+    uint index = py * iteration_info_settings.extent.x + px;
+
+    if (px >= int(iteration_info_settings.extent.x) || py >= int(iteration_info_settings.extent.y)) return;
+    if (batch_data.staging_values[index].iteration == 0) batch_result_data.completed[index] = 0;
+    if (batch_result_data.completed[index] != 0) return;
+
+    FexComplex dz = batch_data.staging_values[index].dz;
+    uvec2 extent = uvec2(iteration_info_settings.extent);
+    float bailout2 = render_meta.bailout * render_meta.bailout;
+
+    uint64_t iteration = batch_data.staging_values[index].iteration;
+    uint64_t ref_iteration = batch_data.staging_values[index].ref_iteration;
+    FexComplex dc = fex_complex_add(offset_conversion(pixel, extent), render_meta.offset);
+    float prev_distance2 = 0;
+    float curr_distance2 = batch_data.staging_values[index].distance2;
+    uint batch_iteration = 0;
+    uint batch_size = batch_info.batch_size;
+
+    while (iteration < render_meta.max_iteration && batch_iteration < batch_size)
+    {
+        if (ignore_mpa == 0 && mp_table_meta.len != 0) {
+            FexPA pa = lookup(ref_iteration, dz);
+            if (pa.skip > 0) {
+                dz = apply(pa, dz, dc);
+                iteration += pa.skip;
+                ref_iteration += pa.skip;
+                ++batch_iteration;
+
+                if (iteration >= render_meta.max_iteration) {
+                    break;
+                }
+            }
+        }
+
+
+
+        if (ref_iteration != render_meta.max_ref_iteration) {
+            FexComplex oldZ2 = fex_complex_mul(render_meta.orbit[compress(ref_iteration)], fex(2));
+            FexComplex oldPtbz = fex_complex_add(oldZ2, dz);
+
+            dz = fex_complex_add(fex_complex_mul(oldPtbz, dz), dc);
+
+            ++ref_iteration;
+            ++iteration;
+            ++batch_iteration;
+        }
+
+        FexComplex z = fex_complex_add(render_meta.orbit[compress(ref_iteration)], dz);
+        prev_distance2 = curr_distance2;
+        curr_distance2 = norm2(fex_complex_cast(z));
+
+        if (ref_iteration == render_meta.max_ref_iteration || fex_lt(norm_approx(z), norm_approx(dz))) {
+            ref_iteration = 0;
+            dz = z;
+        }
+
+        fex_complex_try_normalize(dz);
+
+        if (curr_distance2 > bailout2) {
+            float prev_distance = sqrt(prev_distance2);
+            float curr_distance = sqrt(curr_distance2);
+            iteration_settings.iterations[index] = double(iteration) + get_exterior_double_value_iteration_ratio(prev_distance, curr_distance);
+            batch_result_data.completed[index] = 1;
+            return;
+        }
+
+    }
+
+    if (iteration >= render_meta.max_iteration) {
+        iteration_settings.iterations[index] = double(render_meta.max_iteration);
+        batch_result_data.completed[index] = 1;
+        return;
+    }
+
+    iteration_settings.iterations[index] = double(iteration);
+    batch_data.staging_values[index].dz = dz;
+    batch_data.staging_values[index].ref_iteration = ref_iteration;
+    batch_data.staging_values[index].iteration = iteration;
+    batch_data.staging_values[index].distance2 = curr_distance2;
+
+}

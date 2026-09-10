@@ -1,0 +1,147 @@
+//
+// Created by Merutilm on 2025-08-28.
+//
+
+#include "CPCBoxBlur.hpp"
+
+#include "SharedImageContextIndices.hpp"
+#include <vulkan_helper/engine/executor/ScopedCommandBufferExecutor.hpp>
+#include "vulkan_helper/util/BarrierUtils.hpp"
+
+namespace merutilm::rff2 {
+    void CPCBoxBlur::updateQueue(vkh::DescriptorUpdateQueue &queue, const uint32_t frameIndex) {
+        //no operation
+    }
+
+    /**
+     * Set Gaussian blur using 3x box blur.
+     * @param srcImage the source image to blur. when the gaussian blur starts, its layout must be <b>VK_IMAGE_LAYOUT_GENERAL</b>.
+     * it can be used in fragment shader without any layout transition.
+     * @param dstImage the destination of blurred image. previous image is discarded.
+     */
+    void CPCBoxBlur::setGaussianBlur(const vkh::MultiframeImageContext &srcImage,
+                                     const vkh::MultiframeImageContext &dstImage) {
+        setExtent(srcImage[0].extent);
+        setImages(0, srcImage, dstImage);
+        setImages(1, dstImage, srcImage);
+        setImages(2, srcImage, dstImage);
+    }
+
+
+    void CPCBoxBlur::cmdGaussianBlur(const uint32_t frameIndex, const uint32_t blurSizeDescIndex) {
+        const VkCommandBuffer cbh = wc.getCommandBufferGroup().getCommandBuffer(frameIndex).getCommandBufferHandle();
+        auto &blurDesc = getDescriptor(SET_BLUR_IMAGE);
+
+        auto ctxGetter = [&blurDesc, &frameIndex](const uint32_t descIndex, const uint32_t binding) {
+            return blurDesc.get<vkh::StorageImage>(descIndex, binding).getImageContextMF()[frameIndex];
+        };
+
+        const auto src = ctxGetter(2, BINDING_BLUR_IMAGE_SRC); //actual src
+        const auto dst = ctxGetter(2, BINDING_BLUR_IMAGE_DST); //actual dst
+
+
+        vkh::BarrierUtils::cmdImageMemoryBarrier(cbh, dst.image, 0,
+                                                 VK_ACCESS_SHADER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
+                                                 VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1,
+                                                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+
+        cmdRender(cbh, frameIndex, {0u, blurSizeDescIndex});
+        vkh::BarrierUtils::cmdSynchronizeImageReadToWrite(cbh, src.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        vkh::BarrierUtils::cmdSynchronizeImageWriteToRead(cbh, dst.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        cmdRender(cbh, frameIndex, {1u, blurSizeDescIndex});
+        vkh::BarrierUtils::cmdSynchronizeImageWriteToRead(cbh, src.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1,
+                                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                  VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        vkh::BarrierUtils::cmdSynchronizeImageReadToWrite(cbh, dst.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        cmdRender(cbh, frameIndex, {2u, blurSizeDescIndex});
+
+    }
+
+
+    void CPCBoxBlur::initSize() const {
+        auto &desc = getDescriptor(SET_BLUR_IMAGE);
+        const uint32_t maxFramesInFlight = wc.core.getPhysicalDeviceLoader().getMaxFramesInFlight();
+        for (uint32_t i = 0; i < BOX_BLUR_COUNT; ++i) {
+            desc.get<vkh::StorageImage>(i, BINDING_BLUR_IMAGE_SRC).setImageContextMF(vkh::MultiframeImageContext(
+                maxFramesInFlight));
+            desc.get<vkh::StorageImage>(i, BINDING_BLUR_IMAGE_DST).setImageContextMF(vkh::MultiframeImageContext(
+                maxFramesInFlight));
+        }
+    }
+
+    void CPCBoxBlur::setImages(const uint32_t descIndex, const vkh::MultiframeImageContext &srcImage,
+                               const vkh::MultiframeImageContext &dstImage) const {
+        auto &desc = getDescriptor(SET_BLUR_IMAGE);
+
+
+        writeDescriptorMF(
+            [&desc, &srcImage, &dstImage, &descIndex](vkh::DescriptorUpdateQueue &queue, const uint32_t frameIndex) {
+                desc.get<vkh::StorageImage>(descIndex, BINDING_BLUR_IMAGE_SRC).getImageContextMF()[frameIndex] = srcImage[frameIndex];
+                desc.get<vkh::StorageImage>(descIndex, BINDING_BLUR_IMAGE_DST).getImageContextMF()[frameIndex] = dstImage[frameIndex];
+                desc.queue(queue, frameIndex, {descIndex}, {BINDING_BLUR_IMAGE_SRC, BINDING_BLUR_IMAGE_DST});
+            });
+    }
+
+
+    void CPCBoxBlur::setBlurInfo(const uint32_t blurSizeDescIndex, const float blurSize, const uint32_t frameIndex) const {
+        auto &desc = getDescriptor(SET_BLUR_RADIUS);
+
+        auto &ubo = desc.get<vkh::Uniform>(blurSizeDescIndex, BINDING_BLUR_RADIUS_UBO);
+        ubo.getHostObject().set<float>(TARGET_BLUR_UBO_BLUR_SIZE, blurSize);
+        ubo.updateMF(frameIndex);
+    }
+
+    void CPCBoxBlur::pipelineInitialized() {
+
+        auto &desc = getDescriptor(SET_BLUR_RADIUS);
+        writeDescriptorMF(
+            [&desc](vkh::DescriptorUpdateQueue &queue, const uint32_t frameIndex) {
+                desc.queue(queue, frameIndex, {}, {BINDING_BLUR_RADIUS_UBO});
+            });
+    }
+
+    void CPCBoxBlur::renderContextRefreshed() {
+        using namespace SharedImageContextIndices;
+        auto &sic = wc.getSharedImageContext();
+        setGaussianBlur(sic.getImageContextMF(MF_MAIN_RENDER_DOWNSAMPLED_IMAGE_PRIMARY),
+                                sic.getImageContextMF(MF_MAIN_RENDER_DOWNSAMPLED_IMAGE_SECONDARY));
+    }
+
+
+    void CPCBoxBlur::configurePushConstant(vkh::PipelineLayoutManager &pipelineLayoutManager) {
+        //no operation
+    }
+
+    void CPCBoxBlur::configureDescriptors(std::vector<vkh::Descriptor *> &descriptors) {
+        auto imgDesc = std::vector<vkh::DescriptorManager>();
+        imgDesc.reserve(BOX_BLUR_COUNT);
+        for (uint32_t i = 0; i < BOX_BLUR_COUNT; ++i) {
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendStorageImage(BINDING_BLUR_IMAGE_SRC, VK_SHADER_STAGE_COMPUTE_BIT, std::make_unique<vkh::StorageImage>(wc.core, true));
+            descManager.appendStorageImage(BINDING_BLUR_IMAGE_DST, VK_SHADER_STAGE_COMPUTE_BIT, std::make_unique<vkh::StorageImage>(wc.core, true));
+            imgDesc.emplace_back(std::move(descManager));
+        }
+
+        auto radDesc = std::vector<vkh::DescriptorManager>();
+        radDesc.reserve(BOX_BLUR_COUNT);
+        for (uint32_t i = 0; i < DESC_COUNT_BLUR_TARGET; ++i) {
+            auto descManager = vkh::DescriptorManager();
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_BLUR_UBO_BLUR_SIZE);
+            auto descUBO = std::make_unique<vkh::Uniform>(wc.core, std::move(bufferManager),
+                                                              vkh::BufferLocalization::BIDIRECTIONAL, true);
+            descManager.appendUBO(BINDING_BLUR_RADIUS_UBO, VK_SHADER_STAGE_COMPUTE_BIT, std::move(descUBO));
+            radDesc.emplace_back(std::move(descManager));
+        }
+
+        appendUniqueDescriptor(SET_BLUR_IMAGE, descriptors, std::move(imgDesc));
+        appendUniqueDescriptor(SET_BLUR_RADIUS, descriptors, std::move(radDesc));
+    }
+}

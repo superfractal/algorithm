@@ -1,0 +1,59 @@
+//
+// Created by Merutilm on 2025-09-06.
+//
+
+#pragma once
+#include <vulkan_helper/engine/configurator/ComputePipelineConfigurator.hpp>
+#include "../settings/ShdPaletteSettings.h"
+#include "../settings/ShdStripeSettings.h"
+
+namespace merutilm::rff2 {
+    struct CPC2MapIterationStripe final : public vkh::ComputePipelineConfigurator {
+
+        static constexpr uint32_t SET_I2MAP = 0;
+        static constexpr uint32_t BINDING_I2MAP_SSBO_NORMAL = 0;
+        static constexpr uint32_t TARGET_I2MAP_SSBO_NORMAL_ITERATION = 0;
+        static constexpr uint32_t BINDING_I2MAP_SSBO_ZOOMED = 1;
+        static constexpr uint32_t TARGET_I2MAP_SSBO_ZOOMED_ITERATION = 0;
+        static constexpr uint32_t SET_VIDEO = 1;
+        static constexpr uint32_t SET_PALETTE = 2;
+        static constexpr uint32_t SET_TIME = 3;
+        static constexpr uint32_t SET_OUTPUT_IMAGE = 4;
+        static constexpr uint32_t BINDING_OUTPUT_MERGED_IMAGE = 0;
+        static constexpr uint32_t SET_OUTPUT_ITERATION = 5;
+        static constexpr uint32_t SET_STRIPE = 6;
+
+        explicit CPC2MapIterationStripe(vkh::Engine &engine, vkh::WindowContext &wc)
+            : ComputePipelineConfigurator(engine, wc, "vk_2_map_iter_stripe.comp") {
+        }
+
+        ~CPC2MapIterationStripe() override = default;
+
+        CPC2MapIterationStripe(const CPC2MapIterationStripe &) = delete;
+
+        CPC2MapIterationStripe &operator=(const CPC2MapIterationStripe &) = delete;
+
+        CPC2MapIterationStripe(CPC2MapIterationStripe &&) = delete;
+
+        CPC2MapIterationStripe &operator=(CPC2MapIterationStripe &&) = delete;
+
+        void updateQueue(vkh::DescriptorUpdateQueue &queue, uint32_t frameIndex) override;
+
+        [[nodiscard]] const vkh::ImageContext &getOutputColorImage() const {
+            return getDescriptor(SET_OUTPUT_IMAGE).get<vkh::StorageImage>(0, BINDING_OUTPUT_MERGED_IMAGE).getImageContext();
+        }
+
+        void pipelineInitialized() override;
+
+        void renderContextRefreshed() override;
+
+        void setAllIterations(const std::vector<double> &normal, const std::vector<double> &zoomed) const;
+
+        void set2MapSize(const VkExtent2D &extent);
+
+    protected:
+        void configurePushConstant(vkh::PipelineLayoutManager &pipelineLayoutManager) override;
+
+        void configureDescriptors(std::vector<vkh::Descriptor *> &descriptors) override;
+    };
+}

@@ -1,0 +1,45 @@
+//
+// Created by Merutilm on 2025-09-12.
+//
+
+#pragma once
+#include "vulkan_helper/engine/context/BufferContext.hpp"
+#include "vulkan_helper/handle/CoreHandler.hpp"
+#include "opencv2/core/mat.hpp"
+
+namespace merutilm::rff2 {
+    struct VideoBufferCache final : vkh::CoreHandler{
+        vkh::BufferContext bufferContext;
+        int width;
+        int height;
+        float logZoom;
+        cv::Mat image;
+
+        explicit VideoBufferCache(vkh::Core &core, vkh::BufferContext &&ctx, const int width,
+                                  const int height, const float zoom) : CoreHandler(core), bufferContext(std::move(ctx)), width(width), height(height), logZoom(zoom) {
+            VideoBufferCache::init();
+        }
+
+        ~VideoBufferCache() override {
+            VideoBufferCache::cleanup();
+        }
+
+        VideoBufferCache(const VideoBufferCache &) = delete;
+
+        VideoBufferCache &operator=(const VideoBufferCache &) = delete;
+
+        VideoBufferCache(VideoBufferCache &&) = delete;
+
+        VideoBufferCache &operator=(VideoBufferCache &&) = delete;
+
+    protected:
+        void init() override {
+            image = cv::Mat(height, width, CV_8UC3, bufferContext.mappedMemory);
+        }
+
+        void cleanup() override {
+            core.getLogicalDevice().waitDeviceIdle();
+            vkh::BufferContext::destroyContext(core, bufferContext);
+        }
+    };
+}

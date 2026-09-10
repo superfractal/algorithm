@@ -1,0 +1,38 @@
+//
+// Created by Merutilm on 2025-05-28.
+//
+
+#pragma once
+#include "../../../settings/ShdFogSettings.h"
+#include "../../Presets.hpp"
+
+
+namespace merutilm::rff2::ShdFogPresets {
+
+    struct Disabled final : public Presets::ShaderPresets::FogPreset {
+        [[nodiscard]] std::string getName() const override;
+
+        [[nodiscard]] ShdFogSettings genFog() const override;
+    };
+    struct Low final : public Presets::ShaderPresets::FogPreset {
+        [[nodiscard]] std::string getName() const override;
+
+        [[nodiscard]] ShdFogSettings genFog() const override;
+    };
+    struct Medium final : public Presets::ShaderPresets::FogPreset {
+        [[nodiscard]] std::string getName() const override;
+
+        [[nodiscard]] ShdFogSettings genFog() const override;
+    };
+    struct High final : public Presets::ShaderPresets::FogPreset {
+        [[nodiscard]] std::string getName() const override;
+
+        [[nodiscard]] ShdFogSettings genFog() const override;
+    };
+    struct Ultra final : public Presets::ShaderPresets::FogPreset {
+        [[nodiscard]] std::string getName() const override;
+
+        [[nodiscard]] ShdFogSettings genFog() const override;
+    };
+};
+

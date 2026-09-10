@@ -1,0 +1,240 @@
+//
+// Created by Merutilm on 2025-09-06.
+//
+#include "VideoWindow.hpp"
+
+#include "../io/RFFDynamicMapBinary.h"
+#include "../io/RFFStaticMapBinary.h"
+#include "IOUtilities.h"
+#include "Utilities.h"
+#include "opencv2/opencv.hpp"
+
+namespace merutilm::rff2 {
+    VideoWindow::VideoWindow(RFF2 &app, const int width, const int height) :
+        app(app), width(width), height(height) {
+        VideoWindow::init();
+    }
+
+    VideoWindow::~VideoWindow() { VideoWindow::cleanup(); }
+
+    void VideoWindow::createVideo(RFF2 &app, const std::filesystem::path &open,
+                                  const std::filesystem::path &save, const Settings &settingsClone) {
+        int imgWidth = 0;
+        int imgHeight = 0;
+
+        const bool isWindow = app.rootWindowContext->getWindow()->getWindow();
+
+
+        if (!isWindow) {
+            vkh::logger::log_err("Main window doesn't exist");
+            return;
+        }
+
+        if (app.engine->isValidWindowContext(Constants::VulkanWindow::VIDEO_WINDOW_ATTACHMENT_INDEX)) {
+            vkh::logger::log_err("Video processor already using");
+            return;
+        }
+
+
+        if (settingsClone.video.data.isStatic) {
+            const RFFStaticMapBinary targetMap = RFFStaticMapBinary::readByID(open, 1);
+            if (!targetMap.hasData()) {
+                vkh::logger::log_err("Cannot create video. There is no samples in the directory");
+                return;
+            }
+
+            imgWidth = static_cast<int>(targetMap.getWidth());
+            imgHeight = static_cast<int>(targetMap.getHeight());
+        } else {
+            const RFFDynamicMapBinary targetMap = RFFDynamicMapBinary::readByID(open, 1);
+            if (!targetMap.hasData()) {
+                vkh::logger::log_err("Cannot create video. There is no samples in the directory");
+                return;
+            }
+
+            imgWidth = targetMap.width;
+            imgHeight = targetMap.height;
+        }
+
+
+        const auto cw = static_cast<uint32_t>(std::min(imgWidth, 1280));
+        const auto ch = cw * imgHeight / imgWidth;
+        auto window = VideoWindow(app, static_cast<int>(cw), static_cast<int>(ch));
+        window.initScene(VkExtent2D{static_cast<uint32_t>(imgWidth), static_cast<uint32_t>(imgHeight)}, settingsClone);
+        auto &manager = *window.scene;
+        GLFWwindow *handle = manager.getWindowContext().getWindow()->getWindow();
+
+        const auto &[defaultZoomIncrement, isStatic] = settingsClone.video.data;
+        const auto &[overZoom, showText, mps] = settingsClone.video.animation;
+        const auto &[fps, bitrate] = settingsClone.video.exportation;
+
+
+        cv::VideoWriter writer;
+        writer.open(save.string(), cv::CAP_FFMPEG, cv::VideoWriter::fourcc('a', 'v', 'c', '1'), fps,
+                    cv::Size(imgWidth, imgHeight));
+
+        if (!writer.isOpened()) {
+            vkh::logger::log_err("Cannot open file!!");
+            return;
+        }
+
+        auto &[mutex, ratio, remainedTimeStr] = app.getVideoProgressInfo();
+        const auto frameInterval = mps / fps;
+        uint32_t maxNumber;
+        if (isStatic) {
+            IOUtilities::generateFilename(open, Constants::File::EXT_STATIC_MAP, &maxNumber);
+        } else {
+            IOUtilities::generateFilename(open, Constants::File::EXT_DYNAMIC_MAP, &maxNumber);
+        }
+        --maxNumber;
+
+        const float minNumber = -overZoom;
+        auto currentFrame = static_cast<float>(maxNumber);
+        float currentSec = 0;
+        uint32_t pf1 = UINT32_MAX;
+        const float startSec = std::chrono::duration_cast<std::chrono::duration<float>>(
+                                       std::chrono::high_resolution_clock::now().time_since_epoch())
+                                       .count();
+
+        RFFDynamicMapBinary zoomedDynamic = RFFDynamicMapBinary::DEFAULT;
+        RFFDynamicMapBinary normalDynamic = RFFDynamicMapBinary::DEFAULT;
+        RFFStaticMapBinary zoomedStatic = RFFStaticMapBinary::DEFAULT;
+        RFFStaticMapBinary normalStatic = RFFStaticMapBinary::DEFAULT;
+        cv::Mat zoomedStaticImage = cv::Mat::zeros(imgHeight, imgWidth, CV_16UC4);
+        cv::Mat normalStaticImage = cv::Mat::zeros(imgHeight, imgWidth, CV_16UC4);
+
+        manager.setStatic(isStatic);
+
+        while (currentFrame > minNumber && !glfwWindowShouldClose(handle)) {
+
+            currentFrame -= frameInterval;
+            currentSec += 1.0f / fps;
+            bool requiredRefresh = false;
+
+
+            if (currentFrame < 1) {
+                if (0 != pf1) {
+                    if (isStatic) {
+                        zoomedStatic = RFFStaticMapBinary::DEFAULT;
+                        normalStatic = RFFStaticMapBinary::readByID(open, 1);
+                        zoomedStaticImage = cv::Mat::zeros(imgHeight, imgWidth, CV_16UC4);
+                        normalStaticImage = RFFStaticMapBinary::loadImageByID(open, 1);
+                    } else {
+                        zoomedDynamic = RFFDynamicMapBinary::DEFAULT;
+                        normalDynamic = RFFDynamicMapBinary::readByID(open, 1);
+                    }
+                    pf1 = 0;
+                    requiredRefresh = true;
+                }
+            } else {
+                if (const auto f1 = static_cast<uint32_t>(currentFrame); f1 != pf1) {
+                    const uint32_t f2 = f1 + 1;
+                    if (isStatic) {
+                        zoomedStatic = RFFStaticMapBinary::readByID(open, f1);
+                        normalStatic = RFFStaticMapBinary::readByID(open, f2);
+                        zoomedStaticImage = RFFStaticMapBinary::loadImageByID(open, f1);
+                        normalStaticImage = RFFStaticMapBinary::loadImageByID(open, f2);
+                    } else {
+                        zoomedDynamic = RFFDynamicMapBinary::readByID(open, f1);
+                        normalDynamic = RFFDynamicMapBinary::readByID(open, f2);
+                    }
+                    pf1 = f1;
+                    requiredRefresh = true;
+                }
+            }
+
+            manager.setCurrentFrame(currentFrame);
+            if (requiredRefresh) {
+                if (isStatic) {
+                    manager.setMap(&normalStatic, &zoomedStatic);
+                    manager.applyCurrentStaticImage(normalStaticImage, zoomedStaticImage);
+                } else {
+                    manager.setMap(&normalDynamic, &zoomedDynamic);
+                    manager.applyCurrentDynamicMap(normalDynamic, zoomedDynamic, currentFrame);
+                    manager.setMaxIterationDynamic(static_cast<double>(currentFrame < 1 ? normalDynamic.maxIteration : std::min(normalDynamic.maxIteration, zoomedDynamic.maxIteration)));
+                }
+            }
+
+            std::condition_variable cv;
+            while (!manager.getWindowContext().getWindow()->canRenderNow()) {
+                // noop, TODO - busy waiting anti pattern, use wait and notify via conditional variable
+                _mm_pause();
+            }
+            manager.setTime(currentSec);
+            manager.renderOnce();
+            VideoBufferCache buffer = manager.createImage();
+            writer << generateFrame(buffer, imgWidth, showText);
+
+            const float progressRatio =
+                    (static_cast<float>(maxNumber) - currentFrame) / (static_cast<float>(maxNumber) + overZoom);
+            const float spentSec = std::chrono::duration_cast<std::chrono::duration<float>>(
+                                           std::chrono::high_resolution_clock::now().time_since_epoch())
+                                           .count() -
+                                   startSec;
+            const auto remainedSec = static_cast<uint32_t>((1 - progressRatio) / progressRatio * spentSec);
+
+            std::scoped_lock lock(mutex);
+            ratio = progressRatio;
+            remainedTimeStr = std::format("Processing... {:.2f}% [{}]", std::clamp(progressRatio, 0.0f, 1.0f) * 100,
+                                              Utilities::formatTime(remainedSec));
+        }
+
+        writer.release();
+
+        app.engine->getCore().getLogicalDevice().waitDeviceIdle();
+        vkh::logger::log("Render Finished!");
+
+        std::scoped_lock lock(mutex);
+        ratio = 0;
+    }
+
+
+    cv::Mat VideoWindow::generateFrame(const VideoBufferCache &buffer, const int imgWidth, const bool showText) {
+
+        auto &img = buffer.image;
+        if (showText) {
+            const int xg = std::max(1, imgWidth / 72);
+            const int yg = std::max(1, imgWidth / 192);
+            const int loc = std::max(1, imgWidth / 40);
+            const float size = std::max(1.0f, static_cast<float>(imgWidth) / 800);
+            const int off = std::max(1, loc / 15);
+            const int tkn = std::max(1, off / 2);
+
+            const std::string zoomStr = std::format("Zoom : {:6f}E{:d}", std::pow(10, std::fmod(buffer.logZoom, 1)),
+                                                    static_cast<int>(buffer.logZoom));
+            cv::putText(img, zoomStr, cv::Point(xg + off, loc + yg + off), cv::FONT_HERSHEY_PLAIN, size,
+                        cv::Scalar(0, 0, 0));
+            cv::putText(img, zoomStr, cv::Point(xg, loc + yg), cv::FONT_HERSHEY_PLAIN, size, cv::Scalar(255, 255, 255),
+                        tkn, cv::LINE_AA);
+        }
+        return img;
+    }
+
+
+    void VideoWindow::initScene(const VkExtent2D &videoExtent, const Settings &targetSettings) {
+
+        vkh::WindowInitializerSettings wic{
+                .framerate = 60,
+                .name = "Video Window",
+                .icon = "../res/icon.png",
+                .widthInfo = {.min = 0, .max = GLFW_DONT_CARE, .first = width},
+                .heightInfo = {.min = 0, .max = GLFW_DONT_CARE, .first = height},
+                .resizable = false,
+                .filedrop = false,
+        };
+
+        auto &videoWc =
+                app.engine->attachWindowContext(std::move(wic), Constants::VulkanWindow::VIDEO_WINDOW_ATTACHMENT_INDEX);
+
+        scene = std::make_unique<VideoWindowRenderManager>(*app.engine, videoWc, videoExtent, targetSettings);
+    }
+
+    void VideoWindow::init() {}
+
+
+    void VideoWindow::cleanup() {
+        app.engine->getCore().getLogicalDevice().waitDeviceIdle();
+        scene = nullptr;
+        app.engine->detachWindowContext(Constants::VulkanWindow::VIDEO_WINDOW_ATTACHMENT_INDEX);
+    }
+} // namespace merutilm::rff2

@@ -1,0 +1,389 @@
+//
+// Created by Merutilm on 2025-07-19.
+// Modified by GPT-6 on 2026-09-07
+//
+
+#pragma once
+#include <memory>
+#include "../../data/ComputeShaderBatchStagingData.hpp"
+
+#include "../../mrthy/PA.h"
+#include "vulkan_helper/engine/manage/DescriptorManager.hpp"
+#include "vulkan_helper/engine/wrapped/DescriptorTemplate.hpp"
+
+namespace merutilm::rff2::SharedDescriptorTemplate {
+    struct DescCamera3D final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 0;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_VERTEX_BIT;
+
+        static constexpr uint32_t BINDING_UBO_CAMERA = 0;
+
+        static constexpr uint32_t TARGET_CAMERA_MODEL = 0;
+        static constexpr uint32_t TARGET_CAMERA_VIEW = 1;
+        static constexpr uint32_t TARGET_CAMERA_PROJ = 2;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+
+            bufferManager.reserve<glm::mat4>(TARGET_CAMERA_MODEL);
+            bufferManager.reserve<glm::mat4>(TARGET_CAMERA_VIEW);
+            bufferManager.reserve<glm::mat4>(TARGET_CAMERA_PROJ);
+
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::ALWAYS_EXPOSED, true);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_CAMERA, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescTime final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 1;
+        static constexpr VkShaderStageFlags STAGE =
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        static constexpr uint32_t BINDING_UBO_TIME = 0;
+
+        static constexpr uint32_t TARGET_TIME_CURRENT = 0;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_TIME_CURRENT);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::ALWAYS_EXPOSED, true);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_TIME, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescIteration final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 2;
+        static constexpr VkShaderStageFlags STAGE =
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        static constexpr uint32_t BINDING_UBO_ITERATION_INFO = 0;
+        static constexpr uint32_t BINDING_SSBO_ITERATION_MATRIX = 1;
+
+        static constexpr uint32_t TARGET_UBO_ITERATION_EXTENT = 0;
+        static constexpr uint32_t TARGET_UBO_ITERATION_MAX = 1;
+
+        static constexpr uint32_t TARGET_SSBO_ITERATION_BUFFER = 0;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto descManager = vkh::DescriptorManager();
+
+            auto infoManager = vkh::HostDataObjectManager();
+            infoManager.reserve<glm::uvec2>(TARGET_UBO_ITERATION_EXTENT);
+            infoManager.reserve<double>(TARGET_UBO_ITERATION_MAX);
+
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserveArray<double>(TARGET_SSBO_ITERATION_BUFFER, 1);
+
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(infoManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto ssbo = std::make_unique<vkh::ShaderStorage>(core, std::move(bufferManager),
+                                                             vkh::BufferLocalization::BIDIRECTIONAL, false);
+            descManager.appendUBO(BINDING_UBO_ITERATION_INFO, STAGE, std::move(ubo));
+            descManager.appendSSBO(BINDING_SSBO_ITERATION_MATRIX, STAGE, std::move(ssbo));
+
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+
+    struct DescPalette final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 3;
+        static constexpr VkShaderStageFlags STAGE =
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        static constexpr uint32_t BINDING_SSBO_PALETTE = 0;
+
+        static constexpr uint32_t TARGET_PALETTE_SIZE = 0;
+        static constexpr uint32_t TARGET_PALETTE_INTERVAL = 1;
+        static constexpr uint32_t TARGET_PALETTE_OFFSET = 2;
+        static constexpr uint32_t TARGET_PALETTE_SMOOTHING = 3;
+        static constexpr uint32_t TARGET_PALETTE_SINGLE_SMOOTHING = 4;
+        static constexpr uint32_t TARGET_PALETTE_ANIMATION_SPEED = 5;
+        static constexpr uint32_t TARGET_PALETTE_LINEAR_INTERPOLATION = 6;
+        static constexpr uint32_t TARGET_PALETTE_COLORS = 7;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<uint32_t>(TARGET_PALETTE_SIZE);
+            bufferManager.reserve<float>(TARGET_PALETTE_INTERVAL);
+            bufferManager.reserve<double>(TARGET_PALETTE_OFFSET);
+            bufferManager.reserve<uint32_t>(TARGET_PALETTE_SMOOTHING);
+            bufferManager.reserve<uint32_t>(TARGET_PALETTE_SINGLE_SMOOTHING);
+            bufferManager.reserve<float>(TARGET_PALETTE_ANIMATION_SPEED);
+            bufferManager.reserve<uint32_t>(TARGET_PALETTE_LINEAR_INTERPOLATION);
+            bufferManager.reserveArray<glm::vec4>(TARGET_PALETTE_COLORS, 0, 16);
+
+            auto ssbo = std::make_unique<vkh::ShaderStorage>(core, std::move(bufferManager),
+                                                             vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+
+            descManager.appendSSBO(BINDING_SSBO_PALETTE, STAGE, std::move(ssbo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescStripe final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 4;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_STRIPE = 0;
+
+        static constexpr uint32_t TARGET_STRIPE_TYPE = 0;
+        static constexpr uint32_t TARGET_STRIPE_FIRST_INTERVAL = 1;
+        static constexpr uint32_t TARGET_STRIPE_SECOND_INTERVAL = 2;
+        static constexpr uint32_t TARGET_STRIPE_OPACITY = 3;
+        static constexpr uint32_t TARGET_STRIPE_OFFSET = 4;
+        static constexpr uint32_t TARGET_STRIPE_ANIMATION_SPEED = 5;
+        static constexpr uint32_t TARGET_STRIPE_ITERATION_COLORING = 6;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<uint32_t>(TARGET_STRIPE_TYPE);
+            bufferManager.reserve<float>(TARGET_STRIPE_FIRST_INTERVAL);
+            bufferManager.reserve<float>(TARGET_STRIPE_SECOND_INTERVAL);
+            bufferManager.reserve<float>(TARGET_STRIPE_OPACITY);
+            bufferManager.reserve<float>(TARGET_STRIPE_OFFSET);
+            bufferManager.reserve<float>(TARGET_STRIPE_ANIMATION_SPEED);
+            bufferManager.reserve<uint32_t>(TARGET_STRIPE_ITERATION_COLORING);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_STRIPE, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescSlope final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 5;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_SLOPE = 0;
+
+        static constexpr uint32_t TARGET_SLOPE_DEPTH = 0;
+        static constexpr uint32_t TARGET_SLOPE_REFLECTION_RATIO = 1;
+        static constexpr uint32_t TARGET_SLOPE_OPACITY = 2;
+        static constexpr uint32_t TARGET_SLOPE_ZENITH = 3;
+        static constexpr uint32_t TARGET_SLOPE_AZIMUTH = 4;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_SLOPE_DEPTH);
+            bufferManager.reserve<float>(TARGET_SLOPE_REFLECTION_RATIO);
+            bufferManager.reserve<float>(TARGET_SLOPE_OPACITY);
+            bufferManager.reserve<float>(TARGET_SLOPE_ZENITH);
+            bufferManager.reserve<float>(TARGET_SLOPE_AZIMUTH);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, true);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_SLOPE, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescColor final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 6;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_COLOR = 0;
+
+        static constexpr uint32_t TARGET_COLOR_GAMMA = 0;
+        static constexpr uint32_t TARGET_COLOR_EXPOSURE = 1;
+        static constexpr uint32_t TARGET_COLOR_HUE = 2;
+        static constexpr uint32_t TARGET_COLOR_SATURATION = 3;
+        static constexpr uint32_t TARGET_COLOR_BRIGHTNESS = 4;
+        static constexpr uint32_t TARGET_COLOR_CONTRAST = 5;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_COLOR_GAMMA);
+            bufferManager.reserve<float>(TARGET_COLOR_EXPOSURE);
+            bufferManager.reserve<float>(TARGET_COLOR_HUE);
+            bufferManager.reserve<float>(TARGET_COLOR_SATURATION);
+            bufferManager.reserve<float>(TARGET_COLOR_BRIGHTNESS);
+            bufferManager.reserve<float>(TARGET_COLOR_CONTRAST);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_COLOR, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescFog final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 7;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_FOG = 0;
+
+        static constexpr uint32_t TARGET_FOG_RADIUS = 0;
+        static constexpr uint32_t TARGET_FOG_OPACITY = 1;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto descManager = vkh::DescriptorManager();
+
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_FOG_RADIUS);
+            bufferManager.reserve<float>(TARGET_FOG_OPACITY);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            descManager.appendUBO(BINDING_UBO_FOG, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescBloom final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 8;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_BLOOM = 0;
+
+        static constexpr uint32_t TARGET_BLOOM_THRESHOLD = 0;
+        static constexpr uint32_t TARGET_BLOOM_RADIUS = 1;
+        static constexpr uint32_t TARGET_BLOOM_SOFTNESS = 2;
+        static constexpr uint32_t TARGET_BLOOM_INTENSITY = 3;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_BLOOM_THRESHOLD);
+            bufferManager.reserve<float>(TARGET_BLOOM_RADIUS);
+            bufferManager.reserve<float>(TARGET_BLOOM_SOFTNESS);
+            bufferManager.reserve<float>(TARGET_BLOOM_INTENSITY);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_BLOOM, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescNoiseReduction final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 9;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_UBO_NOISE_REDUCTION = 0;
+
+        static constexpr uint32_t TARGET_NOISE_REDUCTION_USE = 0;
+        static constexpr uint32_t TARGET_NOISE_REDUCTION_SIMILAR_COUNT_THRESHOLD = 1;
+        static constexpr uint32_t TARGET_NOISE_REDUCTION_DIFFERENCE_THRESHOLD = 2;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<bool>(TARGET_NOISE_REDUCTION_USE);
+            bufferManager.reserve<uint32_t>(TARGET_NOISE_REDUCTION_SIMILAR_COUNT_THRESHOLD);
+            bufferManager.reserve<float>(TARGET_NOISE_REDUCTION_DIFFERENCE_THRESHOLD);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_NOISE_REDUCTION, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescVideo final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 10;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+
+        static constexpr uint32_t BINDING_UBO_VIDEO = 0;
+
+        static constexpr uint32_t TARGET_VIDEO_DEFAULT_ZOOM_INCREMENT = 0;
+        static constexpr uint32_t TARGET_VIDEO_CURRENT_FRAME = 1;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_VIDEO_DEFAULT_ZOOM_INCREMENT);
+            bufferManager.reserve<float>(TARGET_VIDEO_CURRENT_FRAME);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, true);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_VIDEO, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescFractal3D final : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 11;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_VERTEX_BIT;
+
+        static constexpr uint32_t BINDING_UBO_F3D = 0;
+
+        static constexpr uint32_t TARGET_F3D_BASE_ITERATION = 0;
+        static constexpr uint32_t TARGET_F3D_DEPTH_DIVISOR = 1;
+        static constexpr uint32_t TARGET_F3D_ROTATION = 2;
+
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            auto bufferManager = vkh::HostDataObjectManager();
+            bufferManager.reserve<float>(TARGET_F3D_BASE_ITERATION);
+            bufferManager.reserve<float>(TARGET_F3D_DEPTH_DIVISOR);
+            bufferManager.reserve<float>(TARGET_F3D_ROTATION);
+            auto ubo = std::make_unique<vkh::Uniform>(core, std::move(bufferManager),
+                                                      vkh::BufferLocalization::BIDIRECTIONAL, false);
+            auto descManager = vkh::DescriptorManager();
+            descManager.appendUBO(BINDING_UBO_F3D, STAGE, std::move(ubo));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+
+    struct DescRenderMetaIterationVariant : public vkh::DescriptorTemplate {
+
+        static constexpr uint32_t ID = 13;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            DescIteration().configure(core, managers);
+        };
+    };
+
+
+    struct DescBatchResult : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 14;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+        static constexpr uint32_t BINDING_BATCH_RESULT_SSBO = 0;
+        static constexpr uint32_t TARGET_BATCH_RESULT_COMPLETED = 0;
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+
+            vkh::HostDataObjectManager homRmBatchResult;
+            homRmBatchResult.reserveArray<uint32_t>(TARGET_BATCH_RESULT_COMPLETED, 1);
+            auto rmBatchResultSSBO = std::make_unique<vkh::ShaderStorage>(
+                    core, std::move(homRmBatchResult), vkh::BufferLocalization::BIDIRECTIONAL, false);
+
+
+            vkh::DescriptorManager descManager;
+            descManager.appendSSBO(BINDING_BATCH_RESULT_SSBO, STAGE,
+                                   std::move(rmBatchResultSSBO));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+
+    struct DescSmoothZoom : public vkh::DescriptorTemplate {
+        static constexpr uint32_t ID = 15;
+        static constexpr VkShaderStageFlags STAGE = VK_SHADER_STAGE_FRAGMENT_BIT;
+        static constexpr uint32_t BINDING_SMOOTH_ZOOM_UBO = 0;
+        static constexpr uint32_t TARGET_SMOOTH_ZOOM_POSITION_DELTA = 0;
+        static constexpr uint32_t TARGET_SMOOTH_ZOOM_LOG_ZOOM_DELTA = 1;
+
+        void configure(vkh::Core &core, std::vector<vkh::DescriptorManager> &managers) override {
+            vkh::DescriptorManager descManager;
+            vkh::HostDataObjectManager hdm;
+            hdm.reserve<glm::vec2>(TARGET_SMOOTH_ZOOM_POSITION_DELTA);
+            hdm.reserve<float>(TARGET_SMOOTH_ZOOM_LOG_ZOOM_DELTA);
+            auto uniform =
+                    std::make_unique<vkh::Uniform>(core, std::move(hdm), vkh::BufferLocalization::BIDIRECTIONAL, false);
+            descManager.appendUBO(BINDING_SMOOTH_ZOOM_UBO, STAGE, std::move(uniform));
+            managers.emplace_back(std::move(descManager));
+        }
+    };
+} // namespace merutilm::rff2::SharedDescriptorTemplate

@@ -1,0 +1,109 @@
+//
+// Created by Merutilm on 2025-06-08.
+//
+
+#pragma once
+#include <algorithm>
+#include <array>
+#include <filesystem>
+#include <fstream>
+#include <cstring>
+#include <vector>
+
+namespace merutilm::rff2 {
+    struct IOUtilities {
+        IOUtilities() = delete;
+
+        static constexpr char OPEN_FILE = 0;
+        static constexpr char SAVE_FILE = 1;
+
+        static std::unique_ptr<std::filesystem::path> ioFileDialog(std::string_view desc, char type,
+                                                                   std::string_view extension);
+
+        static std::unique_ptr<std::filesystem::path> ioDirectoryDialog();
+
+        static std::string fileNameFormat(unsigned int n, std::string_view extension);
+
+        static std::filesystem::path generateFilename(const std::filesystem::path &dir, std::string_view extension,
+                                                      uint32_t *cnt);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static void encodeAndWrite(std::ofstream &out, const T &t);
+
+        static void encodeAndWrite(std::ofstream &out, const char *t, uint64_t length);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static void encodeAndWrite(std::ofstream &out, const std::vector<T> &t);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static void readAndDecode(std::ifstream &in, T *t);
+
+        static void readAndDecode(std::ifstream &in, uint64_t length, char *t);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static void readAndDecode(std::ifstream &in, std::vector<T> *t);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static std::array<char, sizeof(T)> toBinaryArray(const T &v);
+
+        template<typename T> requires std::is_arithmetic_v<T>
+        static void fromBinaryArray(const std::array<char, sizeof(T)> &arr, T *result);
+    };
+
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    void IOUtilities::encodeAndWrite(std::ofstream &out, const T &t) {
+        const auto ot = toBinaryArray(t);
+        out.write(ot.data(), ot.size());
+    }
+
+    inline void IOUtilities::encodeAndWrite(std::ofstream &out, const char *t, const uint64_t length) {
+        out.write(t, static_cast<std::streamsize>(length));
+    }
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    void IOUtilities::encodeAndWrite(std::ofstream &out, const std::vector<T> &t) {
+        std::vector<char> ot;
+        for (double et: t) {
+            const auto oi = toBinaryArray(et);
+            ot.insert(ot.end(), oi.begin(), oi.end());
+        }
+        out.write(ot.data(), static_cast<std::streamsize>(ot.size()));
+    }
+
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    void IOUtilities::readAndDecode(std::ifstream &in, T *t) {
+        auto it = std::array<char, sizeof(T)>();
+        in.read(it.data(), it.size());
+        fromBinaryArray(it, t);
+    }
+
+    inline void IOUtilities::readAndDecode(std::ifstream &in, const uint64_t length, char *t) {
+        in.read(t, static_cast<std::streamsize>(length));
+    }
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    void IOUtilities::readAndDecode(std::ifstream &in, std::vector<T> *t) {
+        auto it = std::vector<char>(t->size() * sizeof(T));
+        in.read(it.data(), static_cast<std::streamsize>(it.size()));
+
+        for (uint32_t i = 0; i < it.size(); i += sizeof(T)) {
+            auto iSubArr = std::array<char, sizeof(T)>();
+            memcpy(&iSubArr, &it[i], sizeof(T));
+            fromBinaryArray(iSubArr, &(*t)[i / sizeof(T)]);
+        }
+    }
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    std::array<char, sizeof(T)> IOUtilities::toBinaryArray(const T &v) {
+        std::array<char, sizeof(T)> arr;
+        memcpy(arr.data(), &v, sizeof(T));
+        return arr;
+    }
+
+    template<typename T> requires std::is_arithmetic_v<T>
+    void IOUtilities::fromBinaryArray(const std::array<char, sizeof(T)> &arr, T *result) {
+        memcpy(result, arr.data(), sizeof(T));
+    }
+}
