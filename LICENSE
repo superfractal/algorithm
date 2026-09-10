@@ -1,23 +1,5 @@
 Modified by GPT-6 on 2026-09-10
 
-RFF COMPONENT ATTRIBUTION AND LICENSE INDEX (2026-09-10)
-======================================================
-
-This index supplements the existing license texts below. It does not change
-third-party license grants. Existing author and contributor notices in source
-files must be retained. Paths are relative to this Release directory.
-
-RFF / Vulkan helper and project changes
---------------------------------------
-Project source is distributed under the project's stated GNU GPL version 3.0,
-subject to the separately identified third-party material and the unresolved
-attachment provenance described below. Original RFF / Vulkan helper source
-credits Merutilm; preserve those notices. GPT-6 creation/modification comments
-record development history, not a separate third-party license grant or a
-determination of copyright ownership.
-Upstream: https://github.com/Merutilm/RFF-2.0
-Project: https://github.com/superfractal/RFF_Astra
-The existing GNU GPL v3 text is retained in this file.
 
 SHA-256 implementation and generated digest values
 -------------------------------------------------
