@@ -1,6 +1,7 @@
 //
 // Created by Merutilm on 2026-04-25.
 //
+// Modified by GPT-6 on 2026-09-12
 
 #pragma once
 #include <array>
@@ -41,7 +42,7 @@ namespace merutilm::rff2 {
                                      int int_exp10);
 
         /**
-         * Fast-addition. It assumes that the count of limbs of both numbers are the same.
+         * Fast-addition. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported.
          * @param result the pointer of result
          * @param lhs left operand
@@ -50,7 +51,7 @@ namespace merutilm::rff2 {
         static void add(fixed_point_complex &result, const fixed_point_complex &lhs, const fixed_point_complex &rhs);
 
         /**
-         * Fast-subtraction. It assumes that the count of limbs of both numbers are the same.
+         * Fast-subtraction. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported.
          * @param result the pointer of result
          * @param lhs left operand
@@ -59,7 +60,7 @@ namespace merutilm::rff2 {
         static void sub(fixed_point_complex &result, const fixed_point_complex &lhs, const fixed_point_complex &rhs);
 
         /**
-         * Fast-multiplication. It assumes that the count of limbs of both numbers are the same.
+         * Fast-multiplication. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported. (but in-place multiplication of each decimal is not supported)
          * @param result the pointer of result
          * @param lhs left operand
@@ -70,7 +71,7 @@ namespace merutilm::rff2 {
                         op_thread_pool *tp = nullptr);
 
         /**
-         * Fast-division. It assumes that the count of limbs of both numbers are the same.
+         * Fast-division. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported.
          * @param result the pointer of result
          * @param lhs left operand
@@ -81,7 +82,7 @@ namespace merutilm::rff2 {
                         op_thread_pool *tp = nullptr);
 
         /**
-         * Fast-square. It assumes that the count of limbs of both numbers are the same.
+         * Fast-square. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported. (but in-place square of each decimal is not supported)
          * @param result the pointer of result
          * @param v operand
@@ -89,14 +90,14 @@ namespace merutilm::rff2 {
          */
         static void sqr(fixed_point_complex &result, const fixed_point_complex &v, op_thread_pool *tp = nullptr);
         /**
-         * Fast-doubling. It assumes that the count of limbs of both numbers are the same.
+         * Fast-doubling. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported.
          * @param result
          * @param v operand
          */
         static void dbl(fixed_point_complex &result, const fixed_point_complex &v);
         /**
-         * Fast-halving. It assumes that the count of limbs of both numbers are the same.
+         * Fast-halving. It assumes that the exp2div64 of both numbers are the same.
          * in-place operation is supported.
          * @param result
          * @param v operand
@@ -133,26 +134,26 @@ namespace merutilm::rff2 {
 
     inline fixed_point_complex::fixed_point_complex(const std::string &re_str, const std::string &im_str,
                                                     const int dec_exp10, const int int_exp10) :
-        real(re_str, dec_exp10, int_exp10), imag(im_str, dec_exp10, int_exp10) {
+        real(re_str, dec_exp10), imag(im_str, dec_exp10) {
         for (auto &temp: temps) {
-            temp.set_exp10(dec_exp10, int_exp10);
+            temp.set_exp10(dec_exp10);
         }
     }
 
     inline fixed_point_complex::fixed_point_complex(const double re, const double im, const int dec_exp10,
                                                     const int int_exp10) :
-        real(re, dec_exp10, int_exp10), imag(im, dec_exp10, int_exp10) {
+        real(re, dec_exp10), imag(im, dec_exp10) {
         for (auto &temp: temps) {
-            temp.set_exp10(dec_exp10, int_exp10);
+            temp.set_exp10(dec_exp10);
         }
     }
 
     template<Number Exp, Number Mantissa, Number Bit>
     inline fixed_point_complex::fixed_point_complex(const exponent<Exp, Mantissa, Bit> re, const exponent<Exp, Mantissa, Bit> im, const int dec_exp10,
                                                     const int int_exp10) :
-        real(re, dec_exp10, int_exp10), imag(im, dec_exp10, int_exp10) {
+        real(re, dec_exp10), imag(im, dec_exp10) {
         for (auto &temp: temps) {
-            temp.set_exp10(dec_exp10, int_exp10);
+            temp.set_exp10(dec_exp10);
         }
     }
 
@@ -160,7 +161,7 @@ namespace merutilm::rff2 {
                                                     const int dec_exp10, const int int_exp10) : real(std::move(re)), imag(std::move(im)) {
         set_exp10(dec_exp10, int_exp10);
         for (auto &temp: temps) {
-            temp.set_exp10(dec_exp10, int_exp10);
+            temp.set_exp10(dec_exp10);
         }
     }
 
@@ -184,12 +185,6 @@ namespace merutilm::rff2 {
         //(a+bi)*(c+di)
         // REAL : ac-bd
         // IMAG : ad+bc
-
-        fixed_point_decimal::make_operation_compatible(result.temps[0], lhs.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[1], rhs.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[2], lhs.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[3], lhs.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[4], lhs.real);
 
         if (tp) {
             if (tp->is_empty()) {
@@ -309,9 +304,6 @@ namespace merutilm::rff2 {
         //(a+bi)^2
         // REAL : a^2-b^2 = (a+b)(a-b)
         // IMAG : 2ab
-        fixed_point_decimal::make_operation_compatible(result.temps[0], v.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[1], v.real);
-        fixed_point_decimal::make_operation_compatible(result.temps[2], v.real);
 
         if (tp) {
 
@@ -323,8 +315,6 @@ namespace merutilm::rff2 {
                     fixed_point_decimal::mul(res->temps[2], v2->real, v2->imag);
                 });
             }
-
-            fixed_point_decimal::make_operation_compatible(result.temps[3], v.real);
             fixed_point_decimal::add(result.temps[0], v.real, v.imag);
             fixed_point_decimal::sub(result.temps[1], v.real, v.imag);
             tp->run_all(&result, &v, nullptr);
@@ -356,9 +346,9 @@ namespace merutilm::rff2 {
         fixed_point_decimal::neg(v.imag);
     }
 
-    inline void fixed_point_complex::make_operation_compatible(fixed_point_complex &result, const fixed_point_complex &v) {
-        fixed_point_decimal::make_operation_compatible(result.real, v.real);
-        fixed_point_decimal::make_operation_compatible(result.imag, v.imag);
+    inline void fixed_point_complex::make_operation_compatible(fixed_point_complex &, const fixed_point_complex &) {
+        // The mpz-backed scalar grows its integer storage automatically.
+        // Keep this external API; the former integer-capacity hint is obsolete.
     }
 
     inline fixed_point_decimal &fixed_point_complex::get_real() { return real; }
@@ -378,31 +368,31 @@ namespace merutilm::rff2 {
 
 
     inline void fixed_point_complex::set_exp10(const int dec_exp10, const int int_exp10) {
-        real.set_exp10(dec_exp10, int_exp10);
-        imag.set_exp10(dec_exp10, int_exp10);
+        real.set_exp10(dec_exp10);
+        imag.set_exp10(dec_exp10);
 
         for (auto &temp: temps) {
-            temp.set_exp10(dec_exp10, int_exp10);
+            temp.set_exp10(dec_exp10);
         }
     }
     inline bool fixed_point_complex::is_strict_zero() const {
-        return real.is_strict_zero() && imag.is_strict_zero();
+        return mpz_sgn(real.data) == 0 && mpz_sgn(imag.data) == 0;
     }
 
 
     inline std::string fixed_point_complex::to_string() {
-        if (real.sgn == 0 && imag.sgn == 0)
+        if (mpz_sgn(real.data) == 0 && mpz_sgn(imag.data) == 0)
             return "0";
 
         const std::string re = real.to_string();
         const std::string im = imag.to_string();
         std::ostringstream oss;
 
-        if (real.sgn != 0) {
+        if (mpz_sgn(real.data) != 0) {
             oss << re;
         }
-        if (imag.sgn != 0) {
-            if (real.sgn != 0 && imag.sgn == 1)
+        if (mpz_sgn(imag.data) != 0) {
+            if (mpz_sgn(real.data) != 0 && mpz_sgn(imag.data) == 1)
                 oss << "+";
             oss << im;
             oss << "i";

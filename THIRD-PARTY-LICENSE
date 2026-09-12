@@ -1,3 +1,5 @@
+Modified by GPT-6 on 2026-09-12
+
                         Third-party assets
 
 This project includes the following third-party font asset:
@@ -6,12 +8,28 @@ This project includes the following third-party font asset:
 
 Copyright © IBM Corp. and its affiliates, 2017-2024.
 
+The preceding family attribution is retained from the existing project notice.
+The actual bundled res/IBMPlexSansKR-Medium.ttf (Version 1.001) embeds:
+Copyright 2018 IBM Corp. All rights reserved.
+Manufacturer: Sandoll Inc.
+SHA-256: dd1ba493f4bb7fc25cfe2bfa5564fda0bb47c970f9a0b85b9a666bc426659694
+
 IBM Plex Sans KR is licensed under the SIL Open Font License, Version 1.1.
 
 The font files are distributed under their own license terms.
 The inclusion of this font does not change the license of the source code of this project.
 
-For the full license text, see:
+The complete official IBM Plex family OFL text is included locally in:
+THIRD_PARTY_IBM_PLEX_LICENSE.txt
+It preserves the family notice and Reserved Font Name Plex. The asset's own
+notice above is retained separately. No claim is made that the exact upstream
+package/hash for this Version 1.001 font was authenticated by this audit.
+
+Official family source:
+https://raw.githubusercontent.com/IBM/plex/master/LICENSE.txt
+Official license text:
+https://openfontlicense.org/open-font-license-official-text/
+Historical license URL:
 https://scripts.sil.org/OFL
 
 ---

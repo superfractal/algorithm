@@ -1,5 +1,35 @@
-Modified by GPT-6 on 2026-09-10
+Modified by GPT-6 on 2026-09-10, 2026-09-12
 
+RFF COMPONENT ATTRIBUTION AND LICENSE INDEX (2026-09-10)
+======================================================
+
+This index supplements the existing license texts below. It does not change
+third-party license grants. Existing author and contributor notices in source
+files must be retained. Paths are relative to this Release directory.
+
+RFF / Vulkan helper and project changes
+--------------------------------------
+Project source is distributed under the project's stated GNU GPL version 3.0,
+subject to the separately identified third-party material and the unresolved
+attachment provenance described below. Original RFF / Vulkan helper source
+credits Merutilm; preserve those notices. GPT-6 creation/modification comments
+record development history, not a separate third-party license grant or a
+determination of copyright ownership.
+Upstream: https://github.com/Merutilm/RFF-2.0
+Project: https://github.com/superfractal/RFF_Astra
+The existing GNU GPL v3 text is retained in this file.
+
+Current locator implementation sources
+--------------------------------------
+SOURCES_AND_REFERENCES.md identifies the attachment-derived proposal and the
+independent local v197-v202 arithmetic additions, their development records,
+the generated GPU shader inputs, and the separate dependency APIs. The v202
+compact CPU derivative code derives from local disk/upper-bound and compact
+GPU derivative code. These local additions use the project's stated GNU GPL
+version 3 terms; author-history comments and dependency notices are retained.
+This source index does not resolve the attachment terms recorded below.
+About_the_Algorithm.md describes the current v202 implementation. The unchanged
+LOCATE_MINIBROT_STMS_RJ_ALGORITHM.md remains the historical attachment text.
 
 SHA-256 implementation and generated digest values
 -------------------------------------------------
@@ -80,8 +110,21 @@ contribution provisions, rather than only the generic Apache license.
 https://openmp.llvm.org/
 https://github.com/llvm/llvm-project/tree/main/openmp
 
+LLVM libc++ runtime
+-------------------
+The distributed libc++.dll is an existing dependency, inspected as MSYS2 clang64
+libc++ 22.1.4-2. Its full installed LICENSE, including component-specific legacy
+notices, is copied unchanged in THIRD_PARTY_LIBCXX_LICENSE.txt. Include that file
+with a distribution; the OpenMP notice alone is not its full notice set.
+License: Apache License 2.0 WITH LLVM exception, with retained legacy notices.
+https://github.com/llvm/llvm-project/blob/main/libcxx/LICENSE.TXT
+
 Other directly identified source/build components
 -------------------------------------------------
+* GLM 1.0.3 (installed MSYS2 package 1.0.3-1): selected MIT alternative.
+  Copyright (c) 2005 - G-Truc Creation. Complete selected copyright,
+  permission and disclaimer are in THIRD_PARTY_GLM_LICENSE.txt.
+  https://raw.githubusercontent.com/g-truc/glm/1.0.3/copying.txt
 * Dear ImGui: extern/imgui; MIT license, Copyright (c) 2014-2026 Omar Cornut
   in the inspected checkout. Full local license below.
   https://github.com/ocornut/imgui
@@ -109,6 +152,9 @@ Other directly identified source/build components
 * IBM Plex Sans KR: separate SIL Open Font License 1.1 asset attribution is
   recorded in THIRD-PARTY-LICENSE. Its asset terms do not relicense RFF code;
   include the matching font license with any font redistribution.
+  Full IBM family OFL text is in THIRD_PARTY_IBM_PLEX_LICENSE.txt, alongside
+  the actual asset's 2018 copyright recorded in THIRD-PARTY-LICENSE.
+  The exact upstream font-package hash has not been authenticated.
 
 STMS-RJ attachment provenance still to be resolved
 ------------------------------------------------
@@ -119,15 +165,19 @@ The attachment's stated independent implementation and mathematical references
 are provenance information, not a substitute for confirming the applicable
 rights/terms. This index cannot grant rights on behalf of its author. Resolve
 and record the rights basis before treating this component as license-cleared.
+The user does not plan to distribute the original ZIP. That archive need not
+be shipped as such, but this does not establish rights for its adapted source
+or historical document included in RFF.
 
 Scope of this index
 -------------------
 These additions identify inspected source and direct build/runtime components;
 they are not a complete bill of materials for every DLL in bin. Distribution
 must retain the notices and provide sources required for its exact artifacts.
-The prior LICENSE_REVIEW_18ea9d7_to_dd8f1c3.md describes the original review;
-the MPFR attribution and local LLVM license-copy gaps are addressed here, while
-attachment rights and final binary source-delivery verification remain open.
+Source attribution and algorithm references are consolidated in
+SOURCES_AND_REFERENCES.md and About_the_Algorithm.md. Historical detailed
+audit reports are retained in the development-only local archive.
+BUILD_LOCATOR_SHADERS.md supplies the retained shader generation/build recipe.
 
 Existing RFF and third-party license texts follow
 ================================================

@@ -1,0 +1,17 @@
+# Created by GPT-6 on 2026-09-12
+# Keep numerical steps visible without changing expression or include order.
+BasedOnStyle: InheritParentConfig
+ColumnLimit: 100
+ContinuationIndentWidth: 4
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: None
+AllowShortLoopsOnASingleLine: false
+BinPackArguments: false
+BinPackParameters: OnePerLine
+BreakStringLiterals: false
+ReflowComments: Never
+SortIncludes: Never
+SortUsingDeclarations: Never

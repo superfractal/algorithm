@@ -1,0 +1,6 @@
+GPU_VERIFY period=83048 iterations=83048 bits=332864 tile=8 gpu_s=5.8873 total_s=6.33867
+GPU_BOUND period=83048 status=FULL_BOUND_PASS
+GPU_VERIFY period=83048 iterations=83048 bits=332864 tile=8 gpu_s=5.93412 total_s=6.3894
+GPU_BOUND period=83048 status=FULL_BOUND_PASS
+GPU_VERIFY period=166095 iterations=166095 bits=665055 tile=8 gpu_s=24.5485 total_s=25.6882
+GPU_BOUND period=166095 status=FULL_BOUND_PASS

@@ -1,0 +1,554 @@
+// Created by GPT-6 on 2026-09-12
+// Modified by GPT-6 on 2026-09-12
+// Generated variant; original source notices follow.
+// Created by GPT-6 on 2026-09-11
+// Modified by GPT-6 on 2026-09-12
+#version 460
+#define GROUP_REDUCE 0
+#define COMPLEX_SQUARE 1
+#define PRODUCTS 2
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+layout(local_size_x = 256) in;
+layout(set = 0, binding = 0, std430) buffer Data {
+    uint data[];
+};
+layout(set = 0, binding = 1, std430) readonly buffer Roots {
+    uint roots[];
+};
+layout(set = 0, binding = 2, std430) buffer Coefficients {
+    uint64_t coefficients[];
+};
+layout(set = 0, binding = 3, std430) buffer Maps {
+    uint maps[];
+};
+layout(set = 0, binding = 4, std430) buffer Result {
+    uint result[];
+};
+layout(push_constant) uniform Params {
+    uint n;
+    uint jobs;
+    uint phase;
+    uint span;
+    uint inv0;
+    uint inv1;
+    uint offset;
+    uint count;
+}
+p;
+shared uint tile[512];
+uint modulus(uint prime) {
+    return prime == 0 ? 2013265921u : 1811939329u;
+}
+uint negateInverse(uint prime) {
+    return prime == 0 ? 2013265919u : 1811939327u;
+}
+// Montgomery products remain in the residue representation used by the root table.
+uint mont(uint a, uint b, uint prime) {
+    uint hi, lo;
+    umulExtended(a, b, hi, lo);
+    uint m = lo * negateInverse(prime), mh, ml;
+    umulExtended(m, modulus(prime), mh, ml);
+    uint sum = lo + ml, u = hi + mh + uint(sum < lo), q = modulus(prime);
+    return u >= q ? u - q : u;
+}
+uint plus(uint a, uint b, uint prime) {
+    uint v = a + b, q = modulus(prime);
+    return v >= q ? v - q : v;
+}
+uint minus(uint a, uint b, uint prime) {
+    return a >= b ? a - b : a + modulus(prime) - b;
+}
+// Packed maps describe the output carry for each possible input carry.
+uint compose(uint after, uint before) {
+    uint v = 0;
+    for (uint c = 0; c < 4; ++c)
+        v |= ((after >> (((before >> (2 * c)) & 3) * 2)) & 3) << (2 * c);
+    return v;
+}
+uint applyCarry(uint map, uint c) {
+    return (map >> (2 * c)) & 3;
+}
+uint mapStride() {
+    uint blocks = p.n / 256;
+    return p.n + blocks + (blocks + 255) / 256 + 1;
+}
+void scan(uint lane) {
+    // Every lane reads the previous scan level before any lane overwrites it.
+    for (uint step = 1; step < 256; step *= 2) {
+        uint prev = lane >= step ? tile[lane - step] : 228u;
+        barrier();
+        tile[lane] = compose(tile[lane], prev);
+        barrier();
+    }
+}
+shared uvec4 maxima[256];
+uvec4 blockMax(uvec4 value, uint lane) {
+    maxima[lane] = value;
+    barrier();
+    for (uint distance = 128; distance > 0; distance /= 2) {
+        if (lane < distance)
+            maxima[lane] = max(maxima[lane], maxima[lane + distance]);
+        barrier();
+    }
+    return maxima[0];
+}
+uint signedCompose(uint after, uint before) {
+    uint v = 0;
+    for (uint c = 0; c < 5; ++c)
+        v |= ((after >> (((before >> (3 * c)) & 7) * 3)) & 7) << (3 * c);
+    return v;
+}
+uint signedCarry(uint m, uint c) {
+    return (m >> (3 * c)) & 7;
+}
+void signedScan(uint lane) {
+    for (uint step = 1; step < 256; step *= 2) {
+        uint prev = lane >= step ? tile[lane - step] : 18056u;
+        barrier();
+        tile[lane] = signedCompose(tile[lane], prev);
+        barrier();
+    }
+}
+
+void main() {
+    uint group = gl_WorkGroupID.x + 65535u * gl_WorkGroupID.y, lane = gl_LocalInvocationID.x,
+         t = group * 256 + lane;
+    if (p.phase == 0) {
+        if (t >= p.jobs * 4 * p.n)
+            return;
+        uint prime = (t / p.n / 2) % 2;
+        data[t] = mont(data[t], prime == 0 ? 1172168163u : 959408210u, prime);
+        return;
+    }
+    if (p.phase == 1 || p.phase == 3) {
+        bool inverse = p.phase == 3;
+        uint streams = inverse ? p.jobs * 2 : (p.jobs / PRODUCTS) * 4;
+        if (t >= streams * (p.n / 2))
+            return;
+        uint stream = t / (p.n / 2), ix = t % (p.n / 2),
+             prime = inverse ? stream % 2 : (stream % 4) / 2;
+        uint base =
+            (inverse ? stream * 2 :
+             ((stream / 4) * PRODUCTS * 4 +
+              (stream % 4) / 2 * 2 + (stream % 2) * 4)) * p.n, halfLength = p.span / 2,
+             j = ix % halfLength;
+        uint at = base + (ix / halfLength) * p.span + j;
+        uint w = roots[prime * p.n + (inverse ? p.n / 2 : 0) + j * (p.n / p.span)];
+        uint a = data[at], b = data[at + halfLength];
+        if (inverse) {
+            b = mont(b, w, prime);
+            data[at] = plus(a, b, prime);
+            data[at + halfLength] = minus(a, b, prime);
+        } else {
+            data[at] = plus(a, b, prime);
+            data[at + halfLength] = mont(minus(a, b, prime), w, prime);
+        }
+        return;
+    }
+    if (p.phase == 5 || p.phase == 6) {
+        bool inverse = p.phase == 6;
+        uint streams = inverse ? p.jobs * 2 : (p.jobs / PRODUCTS) * 4, blocks = p.n / 512;
+        if (group >= streams * blocks)
+            return;
+        uint stream = group / blocks, prime = inverse ? stream % 2 : (stream % 4) / 2;
+        uint base =
+            (inverse ? stream * 2 :
+             ((stream / 4) * PRODUCTS * 4 +
+              (stream % 4) / 2 * 2 + (stream % 2) * 4)) * p.n + (group % blocks) * 512;
+        tile[lane] = data[base + lane];
+        tile[lane + 256] = data[base + lane + 256];
+        barrier();
+        for (uint stage = 0; stage < 9; ++stage) {
+            uint len = inverse ? (2u << stage) : (512u >> stage), halfLength = len / 2,
+                 j = lane % halfLength;
+            uint at = (lane / halfLength) * len + j,
+                 w = roots[prime * p.n + (inverse ? p.n / 2 : 0) + j * (p.n / len)];
+            uint a = tile[at], b = tile[at + halfLength];
+            if (inverse) {
+                b = mont(b, w, prime);
+                tile[at] = plus(a, b, prime);
+                tile[at + halfLength] = minus(a, b, prime);
+            } else {
+                tile[at] = plus(a, b, prime);
+                tile[at + halfLength] = mont(minus(a, b, prime), w, prime);
+            }
+            barrier();
+        }
+        data[base + lane] = tile[lane];
+        data[base + lane + 256] = tile[lane + 256];
+        return;
+    }
+    if (p.phase == 2) {
+        if (t >= (p.jobs / PRODUCTS) * 2 * p.n)
+            return;
+        uint stream = t / p.n, seg = stream / 2, prime = stream % 2, i = t % p.n,
+             base = seg * PRODUCTS * 4;
+        uint x = data[(base + prime * 2) * p.n + i], y = data[(base + 4 + prime * 2) * p.n + i];
+#if COMPLEX_SQUARE
+        uint st = p.jobs * p.n, L = p.n / 2, meta = st + 3 * (p.jobs / PRODUCTS) * p.n,
+             at = result[meta + 12 * seg + 4];
+        bool negative =
+            at != 0 && result[st + 2 * seg * L + at - 1] < result[st + (2 * seg + 1) * L + at - 1];
+        uint xx = mont(x, x, prime), yy = mont(y, y, prime), xy = mont(x, y, prime);
+        data[(base + prime * 2) * p.n + i] = negative ? minus(yy, xx, prime) : minus(xx, yy, prime);
+        data[(base + 4 + prime * 2) * p.n + i] = plus(xy, xy, prime);
+#else
+        data[(base + prime * 2) * p.n + i] = mont(x, x, prime);
+        data[(base + 4 + prime * 2) * p.n + i] = mont(y, y, prime);
+        data[(base + 8 + prime * 2) * p.n + i] = mont(x, y, prime);
+#endif
+        return;
+    }
+    if (p.phase == 4) {
+        if (t >= p.jobs * p.n)
+            return;
+        uint job = t / p.n, i = t % p.n;
+        uint a = mont(mont(data[(job * 4) * p.n + i], p.inv0, 0), 1, 0);
+        uint b = mont(mont(data[(job * 4 + 2) * p.n + i], p.inv1, 1), 1, 1);
+        uint reduced = a >= 1811939329u ? a - 1811939329u : a;
+        uint d = mont(minus(b, reduced, 1), 1207959574u, 1);
+        uint64_t value = uint64_t(a) + uint64_t(2013265921u) * uint64_t(d);
+#if COMPLEX_SQUARE
+        const uint64_t Q = uint64_t(2013265921u) * uint64_t(1811939329u);
+        if (value > Q / 2)
+            value -= Q;
+#endif
+        coefficients[t] = value;
+        return;
+    }
+    if (p.phase == 7) {
+        if (t >= p.jobs * p.n)
+            return;
+        uint job = t / p.n, i = t % p.n;
+        uint sum = uint(coefficients[t] & 65535ul);
+        if (i >= 1)
+            sum += uint((coefficients[t - 1] >> 16) & 65535ul);
+        if (i >= 2)
+            sum += uint((coefficients[t - 2] >> 32) & 65535ul);
+        if (i >= 3)
+            sum += uint(coefficients[t - 3] >> 48);
+        result[t] = sum;
+        uint f = 0;
+        for (uint c = 0; c < 4; ++c)
+            f |= ((sum + c) >> 16) << (2 * c);
+        tile[lane] = f;
+        barrier();
+        scan(lane);
+        uint base = job * mapStride();
+        maps[base + i] = tile[lane];
+        if (lane == 255)
+            maps[base + p.n + i / 256] = tile[lane];
+        return;
+    }
+    if (p.phase == 8) {
+        uint groups = (p.count + 255) / 256;
+        if (group >= p.jobs * groups)
+            return;
+        uint job = group / groups, g = group % groups, i = g * 256 + lane,
+             base = job * mapStride() + p.offset;
+        tile[lane] = i < p.count ? maps[base + i] : 228u;
+        barrier();
+        scan(lane);
+        if (i < p.count)
+            maps[base + i] = tile[lane];
+        if (lane == 255)
+            maps[base + p.count + g] = tile[lane];
+        return;
+    }
+    if (p.phase == 9) {
+        if (t >= p.jobs * p.n)
+            return;
+        uint job = t / p.n, i = t % p.n, block = i / 256, grand = block / 256;
+        uint base = job * mapStride(), blocks = p.n / 256, c = 0;
+        if (grand > 0)
+            c = applyCarry(maps[base + p.n + blocks + grand - 1], c);
+        if (block % 256 > 0)
+            c = applyCarry(maps[base + p.n + block - 1], c);
+        if (i % 256 > 0)
+            c = applyCarry(maps[base + i - 1], c);
+        result[t] = (result[t] + c) & 65535u;
+        return;
+    }
+    // Created by GPT-6 on 2026-09-12
+    // Modified by GPT-6 on 2026-09-12
+    // Phases 40/41 fuse two transform stages; preserve butterfly and carry composition order.
+    if (p.phase == 40 || p.phase == 41) {
+        bool inv = p.phase == 41;
+        uint streams = inv ? p.jobs * 2 : (p.jobs / PRODUCTS) * 4;
+        if (t >= streams * (p.n / 4))
+            return;
+        uint stream = t / (p.n / 4), ix = t % (p.n / 4), prime = inv ? stream % 2 : (stream % 4) / 2;
+        uint base = (inv ? stream * 2
+                         : ((stream / 4) * PRODUCTS * 4 + (stream % 4) / 2 * 2 + (stream % 2) * 4)) *
+                    p.n;
+        uint q = p.span / 4, j = ix % q, at = base + (ix / q) * p.span + j,
+             ro = prime * p.n + (inv ? p.n / 2 : 0);
+        uint w0 = roots[ro + j * (p.n / p.span)], w1 = roots[ro + (j + q) * (p.n / p.span)],
+             w2 = roots[ro + j * (p.n / (p.span / 2))];
+        uint a = data[at], b = data[at + q], c = data[at + 2 * q], d = data[at + 3 * q];
+        uint u, v, x, y;
+        if (!inv) {
+            u = plus(a, c, prime);
+            v = plus(b, d, prime);
+            x = mont(minus(a, c, prime), w0, prime);
+            y = mont(minus(b, d, prime), w1, prime);
+            data[at] = plus(u, v, prime);
+            data[at + q] = mont(minus(u, v, prime), w2, prime);
+            data[at + 2 * q] = plus(x, y, prime);
+            data[at + 3 * q] = mont(minus(x, y, prime), w2, prime);
+        } else {
+            b = mont(b, w2, prime);
+            d = mont(d, w2, prime);
+            u = plus(a, b, prime);
+            v = minus(a, b, prime);
+            x = mont(plus(c, d, prime), w0, prime);
+            y = mont(minus(c, d, prime), w1, prime);
+            data[at] = plus(u, x, prime);
+            data[at + q] = plus(v, y, prime);
+            data[at + 2 * q] = minus(u, x, prime);
+            data[at + 3 * q] = minus(v, y, prime);
+        }
+        return;
+    }
+    if (p.phase == 31) {
+        if (t >= p.jobs * p.n)
+            return;
+        uint job = t / p.n, i = t % p.n;
+        int64_t sum = int64_t(coefficients[t] & 65535ul);
+        if (i >= 1)
+            sum += int64_t((coefficients[t - 1] >> 16) & 65535ul);
+        if (i >= 2)
+            sum += int64_t((coefficients[t - 2] >> 32) & 65535ul);
+        if (i >= 3)
+            sum += int64_t(coefficients[t - 3]) >> 48;
+        result[t] = uint(sum);
+        uint f = 0;
+        for (uint k = 0; k < 5; ++k)
+            f |= uint(((sum + int64_t(k) - 1) >> 16) + 1) << (3 * k);
+        tile[lane] = f;
+        barrier();
+        signedScan(lane);
+        uint base = job * mapStride();
+        maps[base + i] = tile[lane];
+        if (lane == 255)
+            maps[base + p.n + i / 256] = tile[lane];
+        return;
+    }
+    if (p.phase == 32) {
+        uint groups = (p.count + 255) / 256;
+        if (group >= p.jobs * groups)
+            return;
+        uint job = group / groups, g = group % groups, i = g * 256 + lane,
+             base = job * mapStride() + p.offset;
+        tile[lane] = i < p.count ? maps[base + i] : 18056u;
+        barrier();
+        signedScan(lane);
+        if (i < p.count)
+            maps[base + i] = tile[lane];
+        if (lane == 255)
+            maps[base + p.count + g] = tile[lane];
+        return;
+    }
+    if (p.phase == 33) {
+        if (t >= p.jobs * p.n)
+            return;
+        uint job = t / p.n, i = t % p.n, block = i / 256, grand = block / 256, base = job * mapStride(),
+             blocks = p.n / 256, c = 1;
+        if (grand > 0)
+            c = signedCarry(maps[base + p.n + blocks + grand - 1], c);
+        if (block % 256 > 0)
+            c = signedCarry(maps[base + p.n + block - 1], c);
+        if (i % 256 > 0)
+            c = signedCarry(maps[base + i - 1], c);
+        result[t] = (result[t] + uint(int(c) - 1)) & 65535u;
+        return;
+    }
+    // Created by GPT-6 on 2026-09-11
+    // Modified by GPT-6 on 2026-09-12
+    // Result layout: products[J*N], state[2*S*L], c[2*S*L], temporary[2*S*L], metadata[12*S].
+    // Each numbered phase is a separate host dispatch with a memory barrier between phases.
+    if (p.phase >= 19) {
+        uint segments = p.jobs / PRODUCTS, L = p.n / 2, st = p.jobs * p.n, cs = st + 2 * segments * L,
+             tmp = cs + 2 * segments * L, meta = tmp + 2 * segments * L;
+        if (p.phase == 19) {
+            if (t >= segments)
+                return;
+            result[meta + 12 * t + 4] = 0;
+            result[meta + 12 * t + 5] = 0;
+            result[meta + 12 * t + 6] = 0;
+            result[meta + 12 * t + 8] = 0;
+            result[meta + 12 * t + 9] = 0;
+            return;
+        }
+        if (p.phase == 20) {
+            if (t >= segments * p.n)
+                return;
+            uint seg = t / p.n, i = t % p.n;
+            uint x = i < L ? result[st + 2 * seg * L + i] : 0,
+                 y = i < L ? result[st + (2 * seg + 1) * L + i] : 0;
+            #if GROUP_REDUCE
+            uvec4 highest =
+                blockMax(uvec4(x != y ? i + 1 : 0, x != 0 ? i + 1 : 0, y != 0 ? i + 1 : 0, 0), lane);
+            if (lane == 0) {
+                atomicMax(result[meta + 12 * seg + 4], highest.x);
+                atomicMax(result[meta + 12 * seg + 8], highest.y);
+                atomicMax(result[meta + 12 * seg + 9], highest.z);
+            }
+#else
+            if (x != y)
+                atomicMax(result[meta + 12 * seg + 4], i + 1);
+            if (x != 0)
+                atomicMax(result[meta + 12 * seg + 8], i + 1);
+            if (y != 0)
+                atomicMax(result[meta + 12 * seg + 9], i + 1);
+#endif
+            for (uint prime = 0; prime < 2; ++prime) {
+                uint r2 = prime == 0 ? 1172168163u : 959408210u;
+                data[(seg * PRODUCTS * 4 + prime * 2) * p.n + i] = mont(x, r2, prime);
+                data[(seg * PRODUCTS * 4 + 4 + prime * 2) * p.n + i] = mont(y, r2, prime);
+            }
+            return;
+        }
+        if (p.phase == 21) {
+            if (t >= segments * p.n)
+                return;
+            uint seg = t / p.n, i = t % p.n, at = result[meta + 12 * seg + 4];
+            bool realNegative =
+                at != 0 && result[st + 2 * seg * L + at - 1] < result[st + (2 * seg + 1) * L + at - 1];
+            uint a = result[(PRODUCTS * seg + uint(realNegative)) * p.n + i],
+                 b = result[(PRODUCTS * seg + uint(!realNegative)) * p.n + i];
+            result[PRODUCTS * seg * p.n + i] = uint(int(a) - int(b));
+            uint f = uint(a < b) | (uint(a <= b) << 2) | (uint(a <= b) << 4) | (uint(a <= b) << 6);
+            tile[lane] = f;
+            barrier();
+            scan(lane);
+            uint base = seg * mapStride();
+            maps[base + i] = tile[lane];
+            if (lane == 255)
+                maps[base + p.n + i / 256] = tile[lane];
+            return;
+        }
+        if (p.phase == 22) {
+            if (t >= segments * p.n)
+                return;
+            uint seg = t / p.n, i = t % p.n, block = i / 256, grand = block / 256,
+                 base = seg * mapStride(), blocks = p.n / 256, c = 0;
+            if (grand > 0)
+                c = applyCarry(maps[base + p.n + blocks + grand - 1], c);
+            if (block % 256 > 0)
+                c = applyCarry(maps[base + p.n + block - 1], c);
+            if (i % 256 > 0)
+                c = applyCarry(maps[base + i - 1], c);
+            result[PRODUCTS * seg * p.n + i] = (result[PRODUCTS * seg * p.n + i] - c) & 65535u;
+            return;
+        }
+        // Shift the exact integer products to the fixed-point orbit scale.
+        if (p.phase == 23) {
+            if (t >= segments * 2 * L)
+                return;
+            uint comp = t / L, seg = comp / 2, c = comp % 2, i = t % L;
+            uint shift = p.offset - (COMPLEX_SQUARE == 1 ? 0 : c),
+                 source =
+                     (PRODUCTS * seg + (c == 0 ? 0 : (COMPLEX_SQUARE == 1 ? 1 : 2))) * p.n,
+                 word = i + shift / 16, r = shift % 16;
+            uint v = word < p.n ? result[source + word] >> r : 0;
+            if (r != 0 && word + 1 < p.n)
+                v |= (result[source + word + 1] << (16 - r)) & 65535u;
+            result[tmp + t] = v;
+            word += L;
+            uint lost = word < p.n ? result[source + word] >> r : 0;
+            if (r != 0 && word + 1 < p.n)
+                lost |= (result[source + word + 1] << (16 - r)) & 65535u;
+            #if GROUP_REDUCE
+            uvec4 highest = blockMax(uvec4(v != result[cs + t] ? i + 1 : 0, lost != 0 ? 1 : 0, 0, 0), lane);
+            if (lane == 0) {
+                atomicMax(result[meta + 12 * seg + 5 + c], highest.x);
+                atomicOr(result[meta + 12 * seg + 7], highest.y);
+            }
+#else
+            if (v != result[cs + t])
+                atomicMax(result[meta + 12 * seg + 5 + c], i + 1);
+            if (lost != 0)
+                atomicOr(result[meta + 12 * seg + 7], 1u);
+#endif
+            return;
+        }
+        if (p.phase == 24) {
+            if (t >= segments * 2 * L)
+                return;
+            uint comp = t / L, seg = comp / 2, c = comp % 2, i = t % L;
+            uint flags = result[meta + 12 * seg + 10 + c];
+            bool subtract = (flags & 1) != 0, swapOrder = (flags & 2) != 0;
+            uint a = result[(swapOrder ? cs : tmp) + t], b = result[(swapOrder ? tmp : cs) + t];
+            uint v = subtract ? uint(int(a) - int(b)) : a + b, f = 0;
+            for (uint k = 0; k < 4; ++k) {
+                uint carry = subtract ? uint(a < b + min(k, 1u)) : ((v + min(k, 1u)) >> 16);
+                f |= carry << (2 * k);
+            }
+            result[tmp + t] = v;
+            tile[lane] = f;
+            barrier();
+            scan(lane);
+            uint base = comp * mapStride();
+            maps[base + i] = tile[lane];
+            if (lane == 255)
+                maps[base + L + i / 256] = tile[lane];
+            // Signs must remain immutable while all workgroups read the old orbit.
+            return;
+        }
+        if (p.phase == 25) {
+            if (t >= segments * 2 * L)
+                return;
+            uint comp = t / L, seg = comp / 2, c = comp % 2, i = t % L;
+            bool subtract = (result[meta + 12 * seg + 10 + c] & 1) != 0;
+            uint block = i / 256, grand = block / 256, base = comp * mapStride(), blocks = L / 256,
+                 carry = 0;
+            if (grand > 0)
+                carry = applyCarry(maps[base + L + blocks + grand - 1], carry);
+            if (block % 256 > 0)
+                carry = applyCarry(maps[base + L + block - 1], carry);
+            if (i % 256 > 0)
+                carry = applyCarry(maps[base + i - 1], carry);
+            result[tmp + t] = (result[tmp + t] + (subtract ? uint(-int(carry)) : carry)) & 65535u;
+            return;
+        }
+        if (p.phase == 26) {
+            if (t >= segments * 2)
+                return;
+            uint comp = t, seg = comp / 2, c = comp % 2, xyAt = result[meta + 12 * seg + 4];
+            bool realNegative = xyAt != 0 && result[st + 2 * seg * L + xyAt - 1] <
+                                                 result[st + (2 * seg + 1) * L + xyAt - 1];
+            uint sg =
+                c == 0 ? uint(realNegative) : (result[meta + 12 * seg] ^ result[meta + 12 * seg + 1]);
+            bool subtract = sg != result[meta + 12 * seg + 2 + c];
+            uint cmp = result[meta + 12 * seg + 5 + c];
+            bool swapOrder = subtract && cmp != 0 &&
+                             result[tmp + comp * L + cmp - 1] < result[cs + comp * L + cmp - 1];
+            result[meta + 12 * seg + 8 + c] = swapOrder ? result[meta + 12 * seg + 2 + c] : sg;
+            result[meta + 12 * seg + 10 + c] = uint(subtract) | uint(swapOrder) * 2;
+            return;
+        }
+        if (p.phase == 27) {
+            if (t >= segments * 2 * L)
+                return;
+            uint comp = t / L, seg = comp / 2, c = comp % 2, i = t % L;
+            result[st + t] = result[tmp + t];
+            if (i == 0)
+                result[meta + 12 * seg + c] = result[meta + 12 * seg + 8 + c];
+            return;
+        }
+        // Export the leading eight limbs and discarded-limb count for CPU error bounds.
+        if (p.phase == 28) {
+            if (t >= segments * 2)
+                return;
+            uint comp = t, seg = comp / 2, c = comp % 2, msd = result[meta + 12 * seg + 8 + c];
+            uint cut = msd > 8 ? msd - 8 : 0,
+                 at = meta + 12 * segments + (p.span * segments * 2 + comp) * 10;
+            for (uint k = 0; k < 8; ++k)
+                result[at + k] = cut + k < L ? result[st + comp * L + cut + k] : 0;
+            result[at + 8] = cut;
+            result[at + 9] = msd != 0 ? result[meta + 12 * seg + c] : 0u;
+            return;
+        }
+    }
+}

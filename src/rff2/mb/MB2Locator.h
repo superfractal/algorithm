@@ -2,7 +2,7 @@
 // Created by Merutilm on 2025-05-16.
 //
 
-// Modified by GPT-6 on 2026-09-10
+// Modified by GPT-6 on 2026-09-10, 2026-09-12
 #pragma once
 #include "../parallel/ParallelRenderState.h"
 #include "MB2RenderData.hpp"
@@ -15,9 +15,12 @@ namespace merutilm::rff2 {
         FractalSettings settings;
         dex dcMax;
 
-        static std::unique_ptr<fixed_point_complex_i1> findCenterOffset(const MB2RenderDataBase &data);
+        static std::unique_ptr<fixed_point_complex_i1>
+        findCenterOffset(const MB2RenderDataBase &data);
 
-        static std::unique_ptr<MB2Locator> locateMinibrot(ParallelRenderState &state, const MB2RenderDataBase &data,
+        static std::unique_ptr<MB2Locator>
+        locateMinibrot(ParallelRenderState &state,
+                       const MB2RenderDataBase &data,
                        std::unique_ptr<ApproxTableCacheBase> &cache,
                        const std::function<void(uint64_t, int)> &actionWhileFindingMinibrotCenter,
                        const std::function<void(uint64_t, float)> &actionWhileSeriesApprox,
@@ -25,13 +28,14 @@ namespace merutilm::rff2 {
                        const std::function<void(float)> &actionWhileFindingMinibrotZoom);
 
     private:
-        static std::unique_ptr<MB2RenderDataBase>
-        findAccurateCenterPerturbator(ParallelRenderState &state, const MB2RenderDataBase &data,
-                                      std::unique_ptr<ApproxTableCacheBase> &cache,
-                                      const std::function<void(uint64_t, int)> &actionWhileFindingMinibrotCenter,
-                                      const std::function<void(uint64_t, float)> &actionWhileSeriesApprox,
-                                      const std::function<void(uint64_t, float)> &actionWhileCreatingTable);
+        static std::unique_ptr<MB2RenderDataBase> findAccurateCenterPerturbator(
+            ParallelRenderState &state,
+            const MB2RenderDataBase &data,
+            std::unique_ptr<ApproxTableCacheBase> &cache,
+            const std::function<void(uint64_t, int)> &actionWhileFindingMinibrotCenter,
+            const std::function<void(uint64_t, float)> &actionWhileSeriesApprox,
+            const std::function<void(uint64_t, float)> &actionWhileCreatingTable);
 
         static bool checkMaxIterationOnly(const MB2RenderDataBase &renderData);
     };
-}
+} // namespace merutilm::rff2

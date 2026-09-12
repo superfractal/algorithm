@@ -45,5 +45,3 @@
 /update.ps1
 /update.sh
 *.zip
-# CMake build output
-/build

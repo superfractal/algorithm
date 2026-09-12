@@ -1,4 +1,4 @@
-# Modified by GPT-6 on 2026-09-10
+# Modified by GPT-6 on 2026-09-10, 2026-09-12
 cmake_minimum_required(VERSION 3.30)
 project(RFF)
 
@@ -173,11 +173,16 @@ endmacro()
 
 include(FetchContent)
 
-FetchContent_Declare(
-        nfd
-        GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
-        GIT_TAG master
-)
+# Prefer the preserved source used by this release when it is packaged locally.
+if (EXISTS "${CMAKE_SOURCE_DIR}/extern/nativefiledialog-extended/CMakeLists.txt")
+    FetchContent_Declare(nfd SOURCE_DIR "${CMAKE_SOURCE_DIR}/extern/nativefiledialog-extended")
+else ()
+    FetchContent_Declare(
+            nfd
+            GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+            GIT_TAG master
+    )
+endif ()
 
 FetchContent_MakeAvailable(nfd)
 
@@ -191,3 +196,11 @@ target_include_directories(RFF PRIVATE ${CMAKE_SOURCE_DIR}/src/rff2/parallel)
 find_library(RFF_MPFR_LIBRARY NAMES libmpfr.a mpfr HINTS ${CLANG64_LIBS} REQUIRED)
 target_link_libraries(RFF PRIVATE ${RFF_MPFR_LIBRARY})
 target_link_options(RFF PRIVATE -fopenmp)
+
+# v199 exact GPU arithmetic, with all four optimizations enabled by default.
+target_sources(RFF PRIVATE src/rff2/mb/ntt_gpu.cpp src/rff2/mb/orbit_gpu.cpp)
+target_compile_definitions(RFF PRIVATE STMS_GPU_VERIFY_ENABLED)
+set_source_files_properties(src/rff2/mb/ntt_gpu.cpp src/rff2/mb/orbit_gpu.cpp PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off;-fopenmp")
+foreach(variant RANGE 0 7)
+    configure_file(src/rff2/mb/orbit_${variant}.spv ${CMAKE_SOURCE_DIR}/bin/orbit_${variant}.spv COPYONLY)
+endforeach()
